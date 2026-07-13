@@ -5,9 +5,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN uv sync --frozen --no-dev 2>/dev/null || uv pip install --system fastapi "uvicorn[standard]" jinja2 anthropic python-multipart
+RUN uv pip install --system fastapi "uvicorn[standard]" jinja2 openai python-multipart authlib itsdangerous httpx
 
-COPY app.py ./
+COPY app.py auth.py ./
 COPY templates/ templates/
 
 RUN mkdir -p /app/data /app/uploads

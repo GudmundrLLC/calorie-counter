@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generated-at" content="">
+<meta name="model" content="xAI Grok-3">
+<title>Nutrition & Blood Sugar Report</title>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ── Tufte-Tabloid Design System — Letter (8.5x11) ──────── */
+:root{--brand:#502379;--brand-mid:#6b2f9e;--teal:#00a0a0;--teal-dark:#007a7a;--ink:#1a1a1a;--ink-mid:#3a3a3a;--ink-light:#666;--ink-faint:#999;--rule:#c8c8c8;--rule-light:#e4e4e4;--rule-faint:#f0f0f0;--page:#fefcf8;--cream:#f8f6f2;--brand-tint:#f7f4fb;--teal-tint:#edfafa;--red:#c0392b;--green:#1e7e34;--amber:#b8860b}
+@page{size:8.5in 11in;margin:0.6in}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:#ddd;color:var(--ink);font-size:10.5pt;line-height:1.54;padding:1rem 0}
+@media print{body{background:var(--page);padding:0;font-size:10pt}}
+.page-shell{max-width:8.5in;margin:0 auto;background:var(--page);padding:0.6in;box-shadow:0 2px 12px rgba(0,0,0,0.15);min-height:11in}
+@media print{.page-shell{box-shadow:none;margin:0;padding:0;min-height:auto;width:auto}}
+/* Print bar */
+.print-bar{position:fixed;top:0;left:0;right:0;background:var(--brand);color:#fff;padding:0.5rem 1.5rem;display:flex;justify-content:space-between;align-items:center;z-index:100;font-family:'Libre Baskerville',Georgia,serif;font-size:0.75rem}
+.print-bar button{font-family:'Libre Baskerville',Georgia,serif;font-size:0.75rem;font-weight:700;color:var(--brand);background:#fff;border:none;border-radius:3px;padding:0.4rem 1rem;cursor:pointer}
+.print-bar button:hover{background:var(--cream)}
+@media print{.print-bar{display:none}}
+/* Masthead */
+.masthead{border-bottom:2px solid var(--brand);padding-bottom:0.5rem;margin-bottom:0.6rem}
+.masthead h1{font-size:22pt;font-weight:400;line-height:1.1;letter-spacing:-0.5px}
+.masthead .eyebrow{font-family:'Libre Baskerville',Georgia,serif;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;color:var(--brand);margin-bottom:0.15rem}
+.masthead-meta{display:flex;gap:1.5rem;font-size:8.5pt;color:var(--ink-light);margin-top:0.3rem}
+.masthead-meta strong{color:var(--ink)}
+/* KPI row */
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:0.5rem;margin:0.6rem 0}
+.kpi-box{background:var(--cream);border-radius:3px;padding:0.4rem 0.5rem;text-align:center}
+.kpi-box .val{font-size:16pt;font-weight:600;color:var(--brand);line-height:1.1}
+.kpi-box .val.teal{color:var(--teal-dark)}
+.kpi-box .val.red{color:var(--red)}
+.kpi-box .lbl{font-family:'Libre Baskerville',Georgia,serif;font-size:5.5pt;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--ink-faint)}
+/* Sections */
+h2{font-size:13pt;font-weight:600;color:var(--brand);border-bottom:1px solid var(--rule-light);padding-bottom:0.25rem;margin:0.6rem 0 0.4rem}
+/* Table */
+table{width:100%;border-collapse:collapse;font-size:9pt;margin-bottom:0.5rem}
+th{font-family:'Libre Baskerville',Georgia,serif;font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--ink-light);text-align:left;padding:4px 6px;border-bottom:1.5px solid var(--rule)}
+td{padding:4px 6px;border-bottom:1px solid var(--rule-faint);vertical-align:top}
+tr:nth-child(even){background:var(--cream)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+/* Chart (SVG) */
+.chart-wrap{margin:0.4rem 0}
+.chart-wrap svg{width:100%;height:auto}
+/* BS table */
+.bs-normal{color:var(--green);font-weight:600}
+.bs-elevated{color:var(--amber);font-weight:600}
+.bs-high{color:var(--red);font-weight:600}
+/* Highlight box */
+.highlight-box{background:linear-gradient(135deg,var(--brand-tint),#f0ebf5);border-left:3px solid var(--brand);border-radius:0 3px 3px 0;padding:0.5rem 0.6rem;margin:0.4rem 0;font-size:9.5pt}
+.teal-box{background:linear-gradient(135deg,var(--teal-tint),#d4f1f1);border-left:3px solid var(--teal)}
+/* Footer */
+.report-footer{margin-top:1rem;padding-top:0.4rem;border-top:1px solid var(--rule-light);font-size:7.5pt;color:var(--ink-faint)}
+.report-footer a{color:var(--ink-faint)}
+/* Two-col layout */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:0.75rem}
+@media(max-width:600px){.two-col{grid-template-columns:1fr}}
+@media print{.two-col{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<div class="print-bar">
+  <span>Nutrition & Blood Sugar Report &middot; Use Letter (8.5&times;11) &middot; Background graphics: On</span>
+  <div>
+    <select id="report-days" onchange="loadReport()">
+      <option value="7" selected>7 Days</option>
+      <option value="14">14 Days</option>
+      <option value="30">30 Days</option>
+    </select>
+    <button onclick="window.print()">Print / Save PDF</button>
+  </div>
+</div>
+
+<div class="page-shell" id="report-content">
+  <div class="loading" style="text-align:center;padding:3rem;color:var(--ink-faint);font-style:italic">
+    <span class="spinner" style="display:inline-block;width:18px;height:18px;border:2px solid var(--rule-light);border-top-color:var(--brand);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:0.5rem"></span>
+    Loading report data...
+  </div>
+</div>
+
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
+<script>
+async function loadReport(){
+  const days=document.getElementById('report-days').value;
+  try{
+    const resp=await fetch(`/api/report-data?days=${days}`);
+    const data=await resp.json();
+    renderReport(data,days);
+  }catch(e){
+    document.getElementById('report-content').innerHTML=`<p style="color:var(--red);padding:2rem">Failed to load report: ${e.message}</p>`;
+  }
+}
+
+function renderReport(data,days){
+  const el=document.getElementById('report-content');
+  const daily=data.daily_summary||[];
+  const bs=data.blood_sugar||[];
+  const entries=data.entries||[];
+  const now=new Date().toLocaleString('en-US',{dateStyle:'long',timeStyle:'short'});
+
+  // Aggregates
+  const totalCal=daily.reduce((s,d)=>s+d.cal,0);
+  const totalDays=daily.length||1;
+  const avgCal=Math.round(totalCal/totalDays);
+  const totalProtein=daily.reduce((s,d)=>s+(d.protein||0),0);
+  const totalCarbs=daily.reduce((s,d)=>s+(d.carbs||0),0);
+  const totalFat=daily.reduce((s,d)=>s+(d.fat||0),0);
+  const avgBS=bs.length?Math.round(bs.reduce((s,r)=>s+r.value,0)/bs.length):0;
+
+  // Chart bars
+  const maxCal=Math.max(...daily.map(d=>d.cal),1);
+  const chartW=540,chartH=Math.max(daily.length*28,60),barH=18;
+  let chartSvg=`<svg viewBox="0 0 ${chartW} ${chartH}" xmlns="http://www.w3.org/2000/svg">`;
+  daily.forEach((d,i)=>{
+    const y=i*28+4;const w=Math.max((d.cal/maxCal)*(chartW-100),2);
+    const label=new Date(d.entry_date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    chartSvg+=`<text x="55" y="${y+13}" text-anchor="end" font-family="Libre Baskerville,serif" font-size="8" fill="#666">${label}</text>`;
+    chartSvg+=`<rect x="62" y="${y}" width="${w}" height="${barH}" rx="2" fill="#502379" opacity="0.8"/>`;
+    chartSvg+=`<text x="${65+w}" y="${y+13}" font-family="EB Garamond,serif" font-size="9" fill="#3a3a3a">${Math.round(d.cal).toLocaleString()}</text>`;
+  });
+  chartSvg+=`</svg>`;
+
+  // BS chart
+  let bsChartSvg='';
+  if(bs.length>1){
+    const bsW=540,bsH=120,pad=40;
+    const bsMax=Math.max(...bs.map(r=>r.value),200);
+    const bsMin=Math.min(...bs.map(r=>r.value),60);
+    const range=bsMax-bsMin||1;
+    const sortedBS=[...bs].sort((a,b)=>a.measured_at.localeCompare(b.measured_at));
+    const pts=sortedBS.map((r,i)=>{
+      const x=pad+i*((bsW-2*pad)/(sortedBS.length-1||1));
+      const y=pad+(1-(r.value-bsMin)/range)*(bsH-2*pad);
+      return{x,y,v:r.value,ctx:r.context,time:new Date(r.measured_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})};
+    });
+    const line=pts.map((p,i)=>`${i===0?'M':'L'}${p.x},${p.y}`).join(' ');
+    bsChartSvg=`<svg viewBox="0 0 ${bsW} ${bsH}" xmlns="http://www.w3.org/2000/svg">`;
+    // Reference lines
+    [70,100,140].forEach(v=>{
+      if(v>=bsMin&&v<=bsMax){
+        const y=pad+(1-(v-bsMin)/range)*(bsH-2*pad);
+        const c=v<=100?'#1e7e34':v<=140?'#b8860b':'#c0392b';
+        bsChartSvg+=`<line x1="${pad}" y1="${y}" x2="${bsW-pad}" y2="${y}" stroke="${c}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.5"/>`;
+        bsChartSvg+=`<text x="${pad-4}" y="${y+3}" text-anchor="end" font-size="7" fill="${c}">${v}</text>`;
+      }
+    });
+    bsChartSvg+=`<path d="${line}" fill="none" stroke="#c0392b" stroke-width="1.5"/>`;
+    pts.forEach(p=>{
+      const c=p.v<100?'#1e7e34':p.v<140?'#b8860b':'#c0392b';
+      bsChartSvg+=`<circle cx="${p.x}" cy="${p.y}" r="3" fill="${c}"/>`;
+    });
+    bsChartSvg+=`</svg>`;
+  }
+
+  // Daily table rows
+  const dailyRows=daily.map(d=>{
+    const dt=new Date(d.entry_date+'T12:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    return`<tr><td>${dt}</td><td class="num">${Math.round(d.cal).toLocaleString()}</td><td class="num">${Math.round(d.protein||0)}</td><td class="num">${Math.round(d.carbs||0)}</td><td class="num">${Math.round(d.fat||0)}</td><td class="num">${d.cnt}</td></tr>`;
+  }).join('');
+
+  // BS table rows
+  const bsRows=bs.slice(0,30).map(r=>{
+    const dt=new Date(r.measured_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    const cls=r.value<100?'bs-normal':r.value<140?'bs-elevated':'bs-high';
+    return`<tr><td>${dt}</td><td class="num ${cls}">${Math.round(r.value)}</td><td>${r.context}</td><td>${r.notes||''}</td></tr>`;
+  }).join('');
+
+  el.innerHTML=`
+    <header class="masthead">
+      <div class="eyebrow">Health Tracking Report</div>
+      <h1>Nutrition & Blood Sugar</h1>
+      <div class="masthead-meta">
+        <span><strong>Period:</strong> ${days} days (${data.from_date} to ${data.to_date})</span>
+        <span><strong>Generated:</strong> ${now}</span>
+      </div>
+    </header>
+
+    <div class="kpi-row">
+      <div class="kpi-box"><div class="val">${avgCal.toLocaleString()}</div><div class="lbl">Avg Daily Cal</div></div>
+      <div class="kpi-box"><div class="val teal">${Math.round(totalProtein/totalDays)}g</div><div class="lbl">Avg Protein</div></div>
+      <div class="kpi-box"><div class="val">${Math.round(totalCarbs/totalDays)}g</div><div class="lbl">Avg Carbs</div></div>
+      <div class="kpi-box"><div class="val">${Math.round(totalFat/totalDays)}g</div><div class="lbl">Avg Fat</div></div>
+      <div class="kpi-box"><div class="val red">${avgBS||'--'}</div><div class="lbl">Avg BG mg/dL</div></div>
+    </div>
+
+    <h2>Daily Calorie Intake</h2>
+    <div class="chart-wrap">${chartSvg}</div>
+    <table>
+      <thead><tr><th>Date</th><th class="num">Calories</th><th class="num">Protein (g)</th><th class="num">Carbs (g)</th><th class="num">Fat (g)</th><th class="num">Entries</th></tr></thead>
+      <tbody>${dailyRows||'<tr><td colspan="6" style="text-align:center;color:var(--ink-faint)">No calorie data for this period.</td></tr>'}</tbody>
+    </table>
+
+    ${bs.length?`
+    <h2>Blood Sugar Trend</h2>
+    ${bsChartSvg?`<div class="chart-wrap">${bsChartSvg}</div>`:''}
+    <table>
+      <thead><tr><th>Date/Time</th><th class="num">Value (mg/dL)</th><th>Context</th><th>Notes</th></tr></thead>
+      <tbody>${bsRows}</tbody>
+    </table>
+    `:''}
+
+    ${avgBS?`
+    <div class="${avgBS<100?'teal-box':'highlight-box'}" style="margin-top:0.5rem">
+      <strong>Blood Sugar Summary:</strong>
+      Average ${avgBS} mg/dL across ${bs.length} readings.
+      ${avgBS<100?'Within normal fasting range.':avgBS<140?'Slightly elevated — monitor after meals.':'Elevated — consider consulting your healthcare provider.'}
+    </div>
+    `:''}
+
+    <footer class="report-footer">
+      Generated ${now} &middot; xAI Grok-3 &middot; Tufte-Tabloid Design System &middot; EB Garamond + Libre Baskerville<br>
+      Calorie estimates are approximate, based on USDA FoodData Central. Blood sugar values are self-reported. This report is not medical advice.
+    </footer>
+  `;
+}
+
+loadReport();
+</script>
+</body>
+</html>

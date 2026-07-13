@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign In — Calorie Counter</title>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root { --brand:#502379; --ink:#1a1a1a; --ink-light:#666; --page:#fefcf8; --cream:#f8f6f2; --rule-light:#e4e4e4; --red:#c0392b; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'EB Garamond',Georgia,serif;background:var(--cream);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-card{background:var(--page);border:1px solid var(--rule-light);border-radius:6px;padding:3rem 2.5rem;max-width:380px;width:100%;text-align:center}
+h1{font-size:2rem;font-weight:400;letter-spacing:-0.02em;margin-bottom:0.3rem}
+.subtitle{font-family:'Libre Baskerville',Georgia,serif;font-size:0.8rem;color:var(--ink-light);margin-bottom:2rem}
+.btn-google{display:inline-flex;align-items:center;gap:0.6rem;font-family:'Libre Baskerville',Georgia,serif;font-size:0.82rem;font-weight:700;color:#fff;background:var(--brand);border:none;border-radius:4px;padding:0.75rem 1.8rem;cursor:pointer;text-decoration:none;transition:background 0.2s}
+.btn-google:hover{background:#6b2f9e}
+.btn-google svg{width:18px;height:18px}
+.error{color:var(--red);font-size:0.85rem;margin-bottom:1rem}
+.note{font-size:0.75rem;color:var(--ink-light);margin-top:1.5rem}
+</style>
+</head>
+<body>
+<div class="login-card">
+  <h1>Calorie Counter</h1>
+  <p class="subtitle">Track what you eat. Know what you need.</p>
+  {% if error == 'not_allowed' %}<p class="error">Your email is not on the allowed list.</p>
+  {% elif error == 'oauth_failed' %}<p class="error">Google sign-in failed. Please try again.</p>
+  {% elif error == 'oauth_not_configured' %}<p class="error">OAuth is not configured on this instance.</p>
+  {% elif error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if oauth_configured %}
+  <a href="/auth/google/login" class="btn-google">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
+    Sign in with Google
+  </a>
+  {% else %}
+  <p class="note">Google OAuth is not configured.<br>Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>
+  {% endif %}
+  <p class="note">Access is restricted to authorized users.</p>
+</div>
+</body>
+</html>

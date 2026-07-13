@@ -1,12 +1,15 @@
 [project]
 name = "calorie-counter"
-version = "1.0.0"
-description = "Track food intake via text, voice, or photo with AI-powered calorie estimation"
+version = "2.0.0"
+description = "Calorie & blood sugar tracker with text, voice, and photo input via xAI Grok"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "jinja2>=3.1.0",
-    "anthropic>=0.40.0",
+    "openai>=1.40.0",
     "python-multipart>=0.0.9",
+    "authlib>=1.3.0",
+    "itsdangerous>=2.1.0",
+    "httpx>=0.27.0",
 ]
