@@ -1,0 +1,12 @@
+[project]
+name = "calorie-counter"
+version = "1.0.0"
+description = "Track food intake via text, voice, or photo with AI-powered calorie estimation"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "jinja2>=3.1.0",
+    "anthropic>=0.40.0",
+    "python-multipart>=0.0.9",
+]
