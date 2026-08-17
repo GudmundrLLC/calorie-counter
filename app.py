@@ -887,6 +887,30 @@ async def api_admin_journal_preview(request: Request, email: str):
     return HTMLResponse(tpl.render(user=fake_user, entries=[dict(r) for r in rows]))
 
 
+@app.get("/api/whoami")
+async def api_whoami(request: Request):
+    """Return the current session's email + what /journal would render for it.
+    Public (no admin gate) — safe: only reveals YOUR own session state."""
+    session_email = request.session.get("user_email")
+    if not session_email:
+        return {"signed_in": False, "session_email": None, "journal_row_count": 0}
+    conn = get_db()
+    n = conn.execute(
+        """SELECT COUNT(*) AS n FROM journal_entries je
+           JOIN journal_entry_email jee ON jee.journal_id = je.id
+           WHERE jee.email = ? COLLATE NOCASE""",
+        (session_email,),
+    ).fetchone()["n"]
+    allowed = conn.execute(
+        "SELECT 1 FROM allowed_emails WHERE email=? COLLATE NOCASE", (session_email,)
+    ).fetchone()
+    conn.close()
+    return {"signed_in": True,
+            "session_email": session_email,
+            "in_allowed_emails": bool(allowed),
+            "journal_row_count": n}
+
+
 @app.get("/api/admin/journal-stats")
 async def api_admin_journal_stats(request: Request):
     _require_admin(request)
