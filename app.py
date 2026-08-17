@@ -156,10 +156,27 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_journal_user ON journal_entries(user_email);
         CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_entries(entry_date);
+
+        CREATE TABLE IF NOT EXISTS journal_entry_email (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            journal_id INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+            email      TEXT NOT NULL COLLATE NOCASE,
+            UNIQUE (journal_id, email)
+        );
+        CREATE INDEX IF NOT EXISTS idx_journal_entry_email_email ON journal_entry_email(email);
     """)
     # Seed admin emails
     for em in ADMIN_EMAILS:
         conn.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (em,))
+    # Backfill journal_entry_email from journal_entries.user_email on first boot after the
+    # multi-email migration. Runs only when the join table is empty and there are legacy rows.
+    empty = conn.execute("SELECT 1 FROM journal_entry_email LIMIT 1").fetchone() is None
+    if empty:
+        conn.execute(
+            """INSERT OR IGNORE INTO journal_entry_email (journal_id, email)
+               SELECT id, user_email FROM journal_entries
+               WHERE user_email IS NOT NULL AND user_email <> ''"""
+        )
     conn.commit()
     conn.close()
 
@@ -414,10 +431,11 @@ async def journal_page(request: Request):
         return RedirectResponse("/login", status_code=303)
     conn = get_db()
     rows = conn.execute(
-        """SELECT entry_date, content, mood, tags
-           FROM journal_entries
-           WHERE user_email = ? COLLATE NOCASE
-           ORDER BY entry_date DESC, source_created_at DESC""",
+        """SELECT je.entry_date, je.content, je.mood, je.tags
+           FROM journal_entries je
+           JOIN journal_entry_email jee ON jee.journal_id = je.id
+           WHERE jee.email = ? COLLATE NOCASE
+           ORDER BY je.entry_date DESC, je.source_created_at DESC""",
         (user["email"],),
     ).fetchall()
     conn.close()
@@ -746,12 +764,20 @@ def _require_admin(request: Request):
 
 
 def _upsert_journal_rows(rows: list[dict], aemails: list[dict]) -> tuple[int, int]:
-    email_by_name: dict[str, str] = {}
+    # Members can have multiple allowed_emails (e.g. work + personal). Collect all
+    # of them per member_name so /journal renders for whichever address the user
+    # signs in with. journal_entries.user_email keeps the first-seen (primary) email
+    # for backward compat + simple indexed lookups; the join table journal_entry_email
+    # is the source of truth for auth-time matching.
+    emails_by_name: dict[str, list[str]] = {}
     for r in aemails:
         name = (r.get("member_name") or "").strip()
         email = (r.get("email") or "").strip()
-        if name and email and name not in email_by_name:
-            email_by_name[name] = email
+        if not (name and email):
+            continue
+        bucket = emails_by_name.setdefault(name, [])
+        if email not in bucket:
+            bucket.append(email)
 
     conn = get_db()
     imported = updated = 0
@@ -761,30 +787,39 @@ def _upsert_journal_rows(rows: list[dict], aemails: list[dict]) -> tuple[int, in
         entry_date = r.get("entry_date") or ""
         source_created_at = r.get("created_at") or ""
         source_key = f"{member_name}|{entry_date}|{source_created_at}"
-        user_email = email_by_name.get(member_name)
+        emails = emails_by_name.get(member_name, [])
+        primary_email = emails[0] if emails else None
         existing = conn.execute(
             "SELECT id FROM journal_entries WHERE source='fa' AND source_key=?",
             (source_key,),
         ).fetchone()
         if existing:
+            journal_id = existing["id"]
             conn.execute(
                 """UPDATE journal_entries SET
                      user_email=?, content=?, mood=?, tags=?, imported_at=?
                    WHERE id=?""",
-                (user_email, r.get("content"), r.get("mood"), r.get("tags"), now, existing["id"]),
+                (primary_email, r.get("content"), r.get("mood"), r.get("tags"), now, journal_id),
             )
             updated += 1
         else:
-            conn.execute(
+            cur = conn.execute(
                 """INSERT INTO journal_entries
                      (source, source_key, user_email, member_name, entry_date,
                       content, mood, tags, source_created_at, imported_at)
                    VALUES ('fa', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (source_key, user_email, member_name, entry_date,
+                (source_key, primary_email, member_name, entry_date,
                  r.get("content"), r.get("mood"), r.get("tags"),
                  source_created_at, now),
             )
+            journal_id = cur.lastrowid
             imported += 1
+        conn.execute("DELETE FROM journal_entry_email WHERE journal_id = ?", (journal_id,))
+        for em in emails:
+            conn.execute(
+                "INSERT INTO journal_entry_email (journal_id, email) VALUES (?, ?)",
+                (journal_id, em),
+            )
     conn.commit()
     conn.close()
     return imported, updated
