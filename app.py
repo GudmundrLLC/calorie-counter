@@ -120,6 +120,11 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(entry_date);
         CREATE INDEX IF NOT EXISTS idx_entries_user ON entries(user_email);
 
+        -- source/source_key identify entries derived from external systems
+        -- (e.g. Family Alignment journal). Empty for user-created entries.
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_entries_source ON entries(source, source_key)
+            WHERE source <> '';
+
         CREATE TABLE IF NOT EXISTS blood_sugar (
             id          TEXT PRIMARY KEY,
             user_email  TEXT NOT NULL DEFAULT 'local@dev',
@@ -165,6 +170,15 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_journal_entry_email_email ON journal_entry_email(email);
     """)
+    # ALTER TABLE for the source/source_key columns on existing DBs (CREATE
+    # TABLE IF NOT EXISTS is a no-op if the table already exists without them).
+    for col_def in ("source TEXT NOT NULL DEFAULT ''",
+                    "source_key TEXT NOT NULL DEFAULT ''"):
+        try:
+            conn.execute(f"ALTER TABLE entries ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
     # Seed admin emails
     for em in ADMIN_EMAILS:
         conn.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (em,))
@@ -949,6 +963,126 @@ async def api_admin_journal_stats(request: Request):
             "total_journal_entry_email": total_join,
             "per_email": per_email,
             "orphans_by_member": orphans}
+
+
+@app.post("/api/admin/backfill-calories-from-journal")
+async def api_admin_backfill_calories_from_journal(
+    request: Request, email: str | None = None, limit: int = 25
+):
+    """Estimate calories for each journal entry that hasn't yet been processed
+    and insert a backdated row into `entries`. Idempotent via (source, source_key).
+
+    - `email`: process only entries linked to this address; omit for ALL emails.
+    - `limit`: max entries this call processes (Railway request-timeout guard).
+
+    Response returns processed/skipped counts + remaining, so a caller can loop
+    until `remaining == 0`.
+    """
+    _require_admin(request)
+    conn = get_db()
+
+    base_query = """
+        SELECT je.id AS journal_id, je.entry_date, je.content, je.member_name,
+               COALESCE(je.user_email, jee_any.email) AS primary_email
+        FROM journal_entries je
+        LEFT JOIN journal_entry_email jee_any ON jee_any.journal_id = je.id
+        WHERE NOT EXISTS (
+            SELECT 1 FROM entries e
+            WHERE e.source = 'fa_journal' AND e.source_key = CAST(je.id AS TEXT)
+        )
+    """
+    params: list = []
+    if email:
+        base_query += """ AND EXISTS (
+            SELECT 1 FROM journal_entry_email jee
+            WHERE jee.journal_id = je.id AND jee.email = ? COLLATE NOCASE
+        )"""
+        params.append(email)
+    base_query += " GROUP BY je.id ORDER BY je.entry_date ASC LIMIT ?"
+    params.append(limit)
+
+    to_process = conn.execute(base_query, params).fetchall()
+
+    remaining_query = """
+        SELECT COUNT(*) AS n FROM journal_entries je
+        WHERE NOT EXISTS (
+            SELECT 1 FROM entries e
+            WHERE e.source = 'fa_journal' AND e.source_key = CAST(je.id AS TEXT)
+        )
+    """
+    if email:
+        remaining_query += """ AND EXISTS (
+            SELECT 1 FROM journal_entry_email jee
+            WHERE jee.journal_id = je.id AND jee.email = ? COLLATE NOCASE
+        )"""
+    remaining_before = conn.execute(
+        remaining_query, ([email] if email else [])
+    ).fetchone()["n"]
+
+    processed = 0
+    skipped_empty = 0
+    errors = 0
+    for row in to_process:
+        content = (row["content"] or "").strip()
+        if not content:
+            skipped_empty += 1
+            # Write a marker entry so we don't reprocess empties on next call.
+            _insert_journal_calorie_entry(
+                conn, row, {"items": [], "total_calories": 0,
+                            "confidence": "low", "meal_type": "snack",
+                            "notes": "empty journal content"}
+            )
+            continue
+        result = estimate_text(content)
+        if result.get("error"):
+            errors += 1
+            continue
+        _insert_journal_calorie_entry(conn, row, result)
+        processed += 1
+
+    conn.commit()
+
+    remaining_after = conn.execute(
+        remaining_query, ([email] if email else [])
+    ).fetchone()["n"]
+    conn.close()
+
+    return {"ok": True,
+            "email_filter": email,
+            "batch_size": len(to_process),
+            "processed": processed,
+            "skipped_empty": skipped_empty,
+            "errors": errors,
+            "remaining_before": remaining_before,
+            "remaining_after": remaining_after}
+
+
+def _insert_journal_calorie_entry(conn, journal_row, estimate_result):
+    """Insert a backdated `entries` row derived from a journal entry.
+    Idempotent via unique (source, source_key)."""
+    eid = uuid.uuid4().hex[:8]
+    now = datetime.now().isoformat()
+    entry_date = journal_row["entry_date"] or now[:10]
+    conn.execute("""
+        INSERT OR IGNORE INTO entries
+            (id, user_email, input_type, raw_input, photo_filename, items,
+             total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g,
+             confidence, meal_type, notes, entry_date, created_at, updated_at,
+             source, source_key)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (eid, journal_row["primary_email"] or "unknown", "text",
+          journal_row["content"], None,
+          json.dumps(estimate_result.get("items", [])),
+          estimate_result.get("total_calories", 0),
+          estimate_result.get("total_protein_g", 0),
+          estimate_result.get("total_carbs_g", 0),
+          estimate_result.get("total_fat_g", 0),
+          estimate_result.get("total_fiber_g", 0),
+          estimate_result.get("confidence", "medium"),
+          estimate_result.get("meal_type", "snack"),
+          estimate_result.get("notes", ""),
+          entry_date, now, now,
+          "fa_journal", str(journal_row["journal_id"])))
 
 
 @app.get("/health")
