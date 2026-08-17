@@ -867,6 +867,26 @@ async def api_admin_sync_journal_upsert(request: Request):
             "total_rows": imported + updated, "source": "posted"}
 
 
+@app.get("/api/admin/journal-preview", response_class=HTMLResponse)
+async def api_admin_journal_preview(request: Request, email: str):
+    """Render /journal for an arbitrary email — bearer-authed, mirrors the
+    real handler exactly so we can verify template rendering without OAuth."""
+    _require_admin(request)
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT je.entry_date, je.content, je.mood, je.tags
+           FROM journal_entries je
+           JOIN journal_entry_email jee ON jee.journal_id = je.id
+           WHERE jee.email = ? COLLATE NOCASE
+           ORDER BY je.entry_date DESC, je.source_created_at DESC""",
+        (email,),
+    ).fetchall()
+    conn.close()
+    fake_user = {"email": email, "name": f"preview({email})", "picture_url": None}
+    tpl = _jinja.get_template("journal.html")
+    return HTMLResponse(tpl.render(user=fake_user, entries=[dict(r) for r in rows]))
+
+
 @app.get("/api/admin/journal-stats")
 async def api_admin_journal_stats(request: Request):
     _require_admin(request)
