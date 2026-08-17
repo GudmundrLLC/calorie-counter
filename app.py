@@ -867,6 +867,37 @@ async def api_admin_sync_journal_upsert(request: Request):
             "total_rows": imported + updated, "source": "posted"}
 
 
+@app.get("/api/admin/journal-stats")
+async def api_admin_journal_stats(request: Request):
+    _require_admin(request)
+    conn = get_db()
+    total_entries = conn.execute("SELECT COUNT(*) AS n FROM journal_entries").fetchone()["n"]
+    total_join = conn.execute("SELECT COUNT(*) AS n FROM journal_entry_email").fetchone()["n"]
+    per_email = [
+        {"email": r["email"], "count": r["n"]}
+        for r in conn.execute(
+            """SELECT email, COUNT(*) AS n FROM journal_entry_email
+               GROUP BY email ORDER BY n DESC, email"""
+        ).fetchall()
+    ]
+    orphans = [
+        {"member_name": r["member_name"], "count": r["n"]}
+        for r in conn.execute(
+            """SELECT je.member_name, COUNT(*) AS n
+               FROM journal_entries je
+               LEFT JOIN journal_entry_email jee ON jee.journal_id = je.id
+               WHERE jee.id IS NULL
+               GROUP BY je.member_name ORDER BY n DESC"""
+        ).fetchall()
+    ]
+    conn.close()
+    return {"ok": True,
+            "total_journal_entries": total_entries,
+            "total_journal_entry_email": total_join,
+            "per_email": per_email,
+            "orphans_by_member": orphans}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
