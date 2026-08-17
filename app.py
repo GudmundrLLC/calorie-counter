@@ -745,30 +745,8 @@ def _require_admin(request: Request):
     return user
 
 
-@app.post("/api/admin/sync/fa-journal")
-async def api_admin_sync_fa_journal(request: Request):
-    _require_admin(request)
-    if not FA_SYNC_TOKEN:
-        raise HTTPException(500, "FA_SYNC_TOKEN not configured")
-
-    import httpx
-
-    url = f"{FA_BASE_URL}/api/v1/sync/export"
-    headers = {"Authorization": f"Bearer {FA_SYNC_TOKEN}"}
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.get(url, headers=headers)
-            resp.raise_for_status()
-            payload = resp.json()
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"FA fetch failed: {e}")
-
-    if not payload.get("ok"):
-        raise HTTPException(502, f"FA returned error: {payload.get('errors')}")
-
-    rows = payload.get("data", {}).get("tables", {}).get("member_journal", [])
-    email_by_name = {}
-    aemails = payload.get("data", {}).get("tables", {}).get("allowed_emails", [])
+def _upsert_journal_rows(rows: list[dict], aemails: list[dict]) -> tuple[int, int]:
+    email_by_name: dict[str, str] = {}
     for r in aemails:
         name = (r.get("member_name") or "").strip()
         email = (r.get("email") or "").strip()
@@ -809,8 +787,49 @@ async def api_admin_sync_fa_journal(request: Request):
             imported += 1
     conn.commit()
     conn.close()
+    return imported, updated
 
-    return {"ok": True, "imported": imported, "updated": updated, "total_rows": len(rows)}
+
+@app.post("/api/admin/sync/fa-journal")
+async def api_admin_sync_fa_journal(request: Request):
+    _require_admin(request)
+    if not FA_SYNC_TOKEN:
+        raise HTTPException(500, "FA_SYNC_TOKEN not configured")
+
+    import httpx
+
+    url = f"{FA_BASE_URL}/api/v1/sync/export"
+    headers = {"Authorization": f"Bearer {FA_SYNC_TOKEN}"}
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.get(url, headers=headers)
+            resp.raise_for_status()
+            payload = resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"FA fetch failed: {e}")
+
+    if not payload.get("ok"):
+        raise HTTPException(502, f"FA returned error: {payload.get('errors')}")
+
+    tables = payload.get("data", {}).get("tables", {})
+    imported, updated = _upsert_journal_rows(
+        tables.get("member_journal", []),
+        tables.get("allowed_emails", []),
+    )
+    return {"ok": True, "imported": imported, "updated": updated,
+            "total_rows": imported + updated, "source": "railway-fa"}
+
+
+@app.post("/api/admin/sync/journal-upsert")
+async def api_admin_sync_journal_upsert(request: Request):
+    _require_admin(request)
+    body = await request.json()
+    imported, updated = _upsert_journal_rows(
+        body.get("member_journal") or [],
+        body.get("allowed_emails") or [],
+    )
+    return {"ok": True, "imported": imported, "updated": updated,
+            "total_rows": imported + updated, "source": "posted"}
 
 
 @app.get("/health")
