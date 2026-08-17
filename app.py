@@ -911,6 +911,15 @@ async def api_whoami(request: Request):
             "journal_row_count": n}
 
 
+@app.get("/api/admin/allowed-emails")
+async def api_admin_allowed_emails(request: Request):
+    _require_admin(request)
+    conn = get_db()
+    rows = conn.execute("SELECT email FROM allowed_emails ORDER BY email").fetchall()
+    conn.close()
+    return {"count": len(rows), "emails": [r["email"] for r in rows]}
+
+
 @app.get("/api/admin/journal-stats")
 async def api_admin_journal_stats(request: Request):
     _require_admin(request)
