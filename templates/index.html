@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Calorie & Blood Sugar Tracker</title>
+<script>(function(){try{var q=new URLSearchParams(location.search).get("theme");var t;if(q==="light"||q==="dark"){t=q;try{localStorage.setItem("theme",t)}catch(_){}}else{t=localStorage.getItem("theme")||"light"}document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
@@ -108,6 +109,8 @@ select{font-family:'Libre Baskerville',Georgia,serif;font-size:0.8rem;padding:0.
 .entry-items{font-size:0.82rem;color:var(--ink-light);margin-top:0.3rem}
 .btn-delete{position:absolute;top:0.5rem;right:0.5rem;font-size:0.75rem;color:var(--ink-faint);background:none;border:none;cursor:pointer;padding:0.2rem 0.4rem;opacity:0;transition:opacity 0.2s,color 0.2s}
 .entry-card:hover .btn-delete{opacity:1}
+.btn-edit-time{background:none;border:none;color:var(--brand);font-size:0.72rem;text-decoration:underline;cursor:pointer;padding:0 4px;margin-left:6px;font-family:inherit}
+.btn-edit-time:hover{color:var(--brand-mid)}
 .btn-delete:hover{color:var(--red)}
 .type-badge{font-family:'Libre Baskerville',Georgia,serif;font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;padding:0.1rem 0.35rem;border-radius:2px;margin-right:0.4rem}
 .type-text{background:var(--brand-tint);color:var(--brand)}
@@ -408,13 +411,32 @@ function renderLog(entries){
     list.forEach(e=>{
       const time=new Date(e.created_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       const itemStr=(e.items||[]).map(i=>`${i.name} (${i.calories})`).join(', ');
-      html+=`<div class="entry-card"><button class="btn-delete" onclick="deleteEntry('${e.id}')" title="Delete">&#x2715;</button><div class="entry-top"><div class="entry-desc"><span class="type-badge type-${e.input_type}">${e.input_type}</span>${esc(e.raw_input||'')}</div><div class="entry-cal">${Math.round(e.total_calories)}</div></div>${itemStr?`<div class="entry-items">${esc(itemStr)}</div>`:''}<div class="entry-meta">${time}</div></div>`;
+      html+=`<div class="entry-card"><button class="btn-delete" onclick="deleteEntry('${e.id}')" title="Delete">&#x2715;</button><div class="entry-top"><div class="entry-desc"><span class="type-badge type-${e.input_type}">${e.input_type}</span>${esc(e.raw_input||'')}</div><div class="entry-cal">${Math.round(e.total_calories)}</div></div>${itemStr?`<div class="entry-items">${esc(itemStr)}</div>`:''}<div class="entry-meta">${time}<button class="btn-edit-time" onclick="editEntryTime('${e.id}','${e.created_at}')" title="Edit date &amp; time">edit</button></div></div>`;
     });
     html+='</div>';
   });
   el.innerHTML=html;
 }
 async function deleteEntry(id){try{await fetch(`/api/entries/${id}`,{method:'DELETE'});refreshAll()}catch(e){}}
+
+// Retroactively re-slot an entry into the right date/time bucket. entry_date
+// drives the reporting day; created_at drives the displayed time. Both are
+// updated atomically so the reports match what you actually ate when.
+async function editEntryTime(id,currentIso){
+  const cur=currentIso?new Date(currentIso):new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  const suggested=`${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}T${pad(cur.getHours())}:${pad(cur.getMinutes())}`;
+  const input=window.prompt('Set date & time for this entry\n(YYYY-MM-DDTHH:MM local time)',suggested);
+  if(!input)return;
+  const d=new Date(input);
+  if(isNaN(d.getTime())){alert('Bad date/time — expected YYYY-MM-DDTHH:MM');return}
+  const entry_date=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  try{
+    const res=await fetch(`/api/entries/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({entry_date,created_at:d.toISOString()})});
+    if(!res.ok){const err=await res.text();alert('Update failed: '+err);return}
+    refreshAll();
+  }catch(e){alert('Update failed')}
+}
 
 function changeDay(delta){
   viewDate.setDate(viewDate.getDate()+delta);

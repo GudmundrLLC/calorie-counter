@@ -528,12 +528,28 @@ async def api_update(entry_id: str, request: Request):
     if not row:
         conn.close()
         raise HTTPException(404, "Entry not found")
-    allowed = {"meal_type", "notes", "total_calories"}
+    # entry_date drives the reporting bucket; created_at is the displayed
+    # time. Both are editable so the user can retroactively slot an entry
+    # into the right day (e.g. logged next morning but eaten last night).
+    allowed = {"meal_type", "notes", "total_calories", "entry_date", "created_at"}
     sets, vals = [], []
     for k, v in body.items():
-        if k in allowed:
-            sets.append(f"{k}=?")
-            vals.append(v)
+        if k not in allowed:
+            continue
+        if k == "entry_date" and v:
+            # Accept YYYY-MM-DD; reject anything else so a bad string can't
+            # corrupt reporting queries.
+            try:
+                v = date.fromisoformat(str(v)).isoformat()
+            except ValueError:
+                raise HTTPException(400, "entry_date must be YYYY-MM-DD")
+        if k == "created_at" and v:
+            try:
+                v = datetime.fromisoformat(str(v).replace("Z", "+00:00")).isoformat()
+            except ValueError:
+                raise HTTPException(400, "created_at must be ISO 8601")
+        sets.append(f"{k}=?")
+        vals.append(v)
     if sets:
         vals.extend([datetime.now().isoformat(), entry_id])
         conn.execute(f"UPDATE entries SET {','.join(sets)}, updated_at=? WHERE id=?", vals)
