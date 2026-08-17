@@ -34,6 +34,9 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "") or secrets.token_hex(32)
 ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
 DEPLOY_MODE = os.environ.get("DEPLOY_MODE", "local")
 
+FA_BASE_URL = os.environ.get("FA_BASE_URL", "https://family-alignment-production-d237.up.railway.app").rstrip("/")
+FA_SYNC_TOKEN = os.environ.get("FA_SYNC_TOKEN", "")
+
 XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
 XAI_BASE = "https://api.x.ai/v1"
 XAI_TEXT_MODEL = "grok-3"
@@ -136,6 +139,23 @@ def init_db():
             email TEXT NOT NULL UNIQUE COLLATE NOCASE,
             created_at TEXT DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS journal_entries (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            source         TEXT NOT NULL,
+            source_key     TEXT NOT NULL,
+            user_email     TEXT,
+            member_name    TEXT,
+            entry_date     TEXT,
+            content        TEXT,
+            mood           TEXT,
+            tags           TEXT,
+            source_created_at TEXT,
+            imported_at    TEXT NOT NULL,
+            UNIQUE (source, source_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_journal_user ON journal_entries(user_email);
+        CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_entries(entry_date);
     """)
     # Seed admin emails
     for em in ADMIN_EMAILS:
@@ -685,6 +705,81 @@ async def api_photo(filename: str):
     if not p.exists():
         raise HTTPException(404, "Photo not found")
     return FileResponse(str(p))
+
+
+def _require_admin(request: Request):
+    user = _require_auth(request)
+    if not ADMIN_EMAILS or user["email"].lower() not in ADMIN_EMAILS:
+        raise HTTPException(403, "Admin only")
+    return user
+
+
+@app.post("/api/admin/sync/fa-journal")
+async def api_admin_sync_fa_journal(request: Request):
+    _require_admin(request)
+    if not FA_SYNC_TOKEN:
+        raise HTTPException(500, "FA_SYNC_TOKEN not configured")
+
+    import httpx
+
+    url = f"{FA_BASE_URL}/api/v1/sync/export"
+    headers = {"Authorization": f"Bearer {FA_SYNC_TOKEN}"}
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.get(url, headers=headers)
+            resp.raise_for_status()
+            payload = resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"FA fetch failed: {e}")
+
+    if not payload.get("ok"):
+        raise HTTPException(502, f"FA returned error: {payload.get('errors')}")
+
+    rows = payload.get("data", {}).get("tables", {}).get("member_journal", [])
+    email_by_name = {}
+    aemails = payload.get("data", {}).get("tables", {}).get("allowed_emails", [])
+    for r in aemails:
+        name = (r.get("member_name") or "").strip()
+        email = (r.get("email") or "").strip()
+        if name and email and name not in email_by_name:
+            email_by_name[name] = email
+
+    conn = get_db()
+    imported = updated = 0
+    now = datetime.now().isoformat()
+    for r in rows:
+        member_name = (r.get("member_name") or "").strip()
+        entry_date = r.get("entry_date") or ""
+        source_created_at = r.get("created_at") or ""
+        source_key = f"{member_name}|{entry_date}|{source_created_at}"
+        user_email = email_by_name.get(member_name)
+        existing = conn.execute(
+            "SELECT id FROM journal_entries WHERE source='fa' AND source_key=?",
+            (source_key,),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """UPDATE journal_entries SET
+                     user_email=?, content=?, mood=?, tags=?, imported_at=?
+                   WHERE id=?""",
+                (user_email, r.get("content"), r.get("mood"), r.get("tags"), now, existing["id"]),
+            )
+            updated += 1
+        else:
+            conn.execute(
+                """INSERT INTO journal_entries
+                     (source, source_key, user_email, member_name, entry_date,
+                      content, mood, tags, source_created_at, imported_at)
+                   VALUES ('fa', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (source_key, user_email, member_name, entry_date,
+                 r.get("content"), r.get("mood"), r.get("tags"),
+                 source_created_at, now),
+            )
+            imported += 1
+    conn.commit()
+    conn.close()
+
+    return {"ok": True, "imported": imported, "updated": updated, "total_rows": len(rows)}
 
 
 @app.get("/health")
