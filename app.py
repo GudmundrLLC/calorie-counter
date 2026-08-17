@@ -97,6 +97,8 @@ def get_db():
 
 def init_db():
     conn = get_db()
+    # Phase 1: base tables. Column additions for `entries` happen in Phase 2
+    # (before any index referencing those columns is created).
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS entries (
             id          TEXT PRIMARY KEY,
@@ -119,11 +121,6 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(entry_date);
         CREATE INDEX IF NOT EXISTS idx_entries_user ON entries(user_email);
-
-        -- source/source_key identify entries derived from external systems
-        -- (e.g. Family Alignment journal). Empty for user-created entries.
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_entries_source ON entries(source, source_key)
-            WHERE source <> '';
 
         CREATE TABLE IF NOT EXISTS blood_sugar (
             id          TEXT PRIMARY KEY,
@@ -170,14 +167,21 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_journal_entry_email_email ON journal_entry_email(email);
     """)
-    # ALTER TABLE for the source/source_key columns on existing DBs (CREATE
-    # TABLE IF NOT EXISTS is a no-op if the table already exists without them).
+    # Phase 2: ensure the source/source_key columns exist on `entries` — needed
+    # both for fresh DBs (base CREATE TABLE omits them for simplicity) and for
+    # existing DBs from before this migration. Column additions must happen
+    # BEFORE any index that references them.
     for col_def in ("source TEXT NOT NULL DEFAULT ''",
                     "source_key TEXT NOT NULL DEFAULT ''"):
         try:
             conn.execute(f"ALTER TABLE entries ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
             pass  # column already exists
+    # Phase 3: indexes that depend on Phase-2 columns.
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_entries_source "
+        "ON entries(source, source_key) WHERE source <> ''"
+    )
 
     # Seed admin emails
     for em in ADMIN_EMAILS:
