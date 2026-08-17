@@ -985,40 +985,50 @@ async def api_admin_backfill_calories_from_journal(
     _require_admin(request)
     conn = get_db()
 
+    # One-shot cleanup of legacy backfill rows written with the old source_key
+    # scheme (single journal_id — didn't fan out per email, so charts filtered
+    # by the signed-in user's email saw nothing). Detect legacy by absence of
+    # ":" in source_key. Safe to run every request — after cleanup, matches 0.
+    conn.execute(
+        "DELETE FROM entries WHERE source='fa_journal' AND source_key NOT LIKE '%:%'"
+    )
+
+    # A journal entry needs processing (per email) when its (journal_id, email)
+    # pair has no matching `entries` row. Query is at the (journal × email)
+    # grain — one row per pair. To keep Grok calls minimal we still process by
+    # journal_id (call Grok once, insert N rows below).
     base_query = """
-        SELECT je.id AS journal_id, je.entry_date, je.content, je.member_name,
-               COALESCE(je.user_email, jee_any.email) AS primary_email
+        SELECT DISTINCT je.id AS journal_id, je.entry_date, je.content, je.member_name
         FROM journal_entries je
-        LEFT JOIN journal_entry_email jee_any ON jee_any.journal_id = je.id
+        JOIN journal_entry_email jee ON jee.journal_id = je.id
         WHERE NOT EXISTS (
             SELECT 1 FROM entries e
-            WHERE e.source = 'fa_journal' AND e.source_key = CAST(je.id AS TEXT)
+            WHERE e.source = 'fa_journal'
+              AND e.source_key = CAST(je.id AS TEXT) || ':' || jee.email
         )
     """
     params: list = []
     if email:
-        base_query += """ AND EXISTS (
-            SELECT 1 FROM journal_entry_email jee
-            WHERE jee.journal_id = je.id AND jee.email = ? COLLATE NOCASE
-        )"""
+        base_query += " AND jee.email = ? COLLATE NOCASE"
         params.append(email)
-    base_query += " GROUP BY je.id ORDER BY je.entry_date ASC LIMIT ?"
+    base_query += " ORDER BY je.entry_date ASC LIMIT ?"
     params.append(limit)
 
     to_process = conn.execute(base_query, params).fetchall()
 
+    # remaining is measured at the (journal × email) pair grain — same units
+    # the caller intuits from `batch_size`.
     remaining_query = """
         SELECT COUNT(*) AS n FROM journal_entries je
+        JOIN journal_entry_email jee ON jee.journal_id = je.id
         WHERE NOT EXISTS (
             SELECT 1 FROM entries e
-            WHERE e.source = 'fa_journal' AND e.source_key = CAST(je.id AS TEXT)
+            WHERE e.source = 'fa_journal'
+              AND e.source_key = CAST(je.id AS TEXT) || ':' || jee.email
         )
     """
     if email:
-        remaining_query += """ AND EXISTS (
-            SELECT 1 FROM journal_entry_email jee
-            WHERE jee.journal_id = je.id AND jee.email = ? COLLATE NOCASE
-        )"""
+        remaining_query += " AND jee.email = ? COLLATE NOCASE"
     remaining_before = conn.execute(
         remaining_query, ([email] if email else [])
     ).fetchone()["n"]
@@ -1027,21 +1037,31 @@ async def api_admin_backfill_calories_from_journal(
     skipped_empty = 0
     errors = 0
     for row in to_process:
+        emails_for_journal = [
+            r["email"] for r in conn.execute(
+                "SELECT email FROM journal_entry_email WHERE journal_id = ?",
+                (row["journal_id"],),
+            ).fetchall()
+        ]
+        if not emails_for_journal:
+            continue
         content = (row["content"] or "").strip()
         if not content:
             skipped_empty += 1
-            # Write a marker entry so we don't reprocess empties on next call.
-            _insert_journal_calorie_entry(
-                conn, row, {"items": [], "total_calories": 0,
-                            "confidence": "low", "meal_type": "snack",
-                            "notes": "empty journal content"}
+            _insert_journal_calorie_entries_per_email(
+                conn, row, emails_for_journal,
+                {"items": [], "total_calories": 0,
+                 "confidence": "low", "meal_type": "snack",
+                 "notes": "empty journal content"}
             )
             continue
         result = estimate_text(content)
         if result.get("error"):
             errors += 1
             continue
-        _insert_journal_calorie_entry(conn, row, result)
+        _insert_journal_calorie_entries_per_email(
+            conn, row, emails_for_journal, result
+        )
         processed += 1
 
     conn.commit()
@@ -1061,12 +1081,26 @@ async def api_admin_backfill_calories_from_journal(
             "remaining_after": remaining_after}
 
 
-def _insert_journal_calorie_entry(conn, journal_row, estimate_result):
-    """Insert a backdated `entries` row derived from a journal entry.
+def _insert_journal_calorie_entries_per_email(conn, journal_row, emails, estimate_result):
+    """Insert one backdated `entries` row per linked email, so charts filtered
+    by any of the journal's linked addresses see the data. Idempotent via
+    unique (source, source_key) where source_key = "{journal_id}:{email}"."""
+    now = datetime.now().isoformat()
+    entry_date = journal_row["entry_date"] or now[:10]
+    for em in emails:
+        _insert_journal_calorie_entry(
+            conn, journal_row, estimate_result,
+            user_email=em, entry_date=entry_date,
+            source_key=f"{journal_row['journal_id']}:{em}",
+        )
+
+
+def _insert_journal_calorie_entry(conn, journal_row, estimate_result,
+                                  user_email, entry_date, source_key):
+    """Insert a single backdated `entries` row for one (journal, email) pair.
     Idempotent via unique (source, source_key)."""
     eid = uuid.uuid4().hex[:8]
     now = datetime.now().isoformat()
-    entry_date = journal_row["entry_date"] or now[:10]
     conn.execute("""
         INSERT OR IGNORE INTO entries
             (id, user_email, input_type, raw_input, photo_filename, items,
@@ -1074,7 +1108,7 @@ def _insert_journal_calorie_entry(conn, journal_row, estimate_result):
              confidence, meal_type, notes, entry_date, created_at, updated_at,
              source, source_key)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (eid, journal_row["primary_email"] or "unknown", "text",
+    """, (eid, user_email, "text",
           journal_row["content"], None,
           json.dumps(estimate_result.get("items", [])),
           estimate_result.get("total_calories", 0),
@@ -1086,7 +1120,7 @@ def _insert_journal_calorie_entry(conn, journal_row, estimate_result):
           estimate_result.get("meal_type", "snack"),
           estimate_result.get("notes", ""),
           entry_date, now, now,
-          "fa_journal", str(journal_row["journal_id"])))
+          "fa_journal", source_key))
 
 
 @app.get("/health")
