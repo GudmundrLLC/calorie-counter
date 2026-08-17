@@ -407,6 +407,24 @@ async def report_page(request: Request):
     return HTMLResponse(tpl.render(user=user))
 
 
+@app.get("/journal", response_class=HTMLResponse)
+async def journal_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT entry_date, content, mood, tags
+           FROM journal_entries
+           WHERE user_email = ? COLLATE NOCASE
+           ORDER BY entry_date DESC, source_created_at DESC""",
+        (user["email"],),
+    ).fetchall()
+    conn.close()
+    tpl = _jinja.get_template("journal.html")
+    return HTMLResponse(tpl.render(user=user, entries=[dict(r) for r in rows]))
+
+
 # ── Routes: Calorie API ────────────────────────────────────────────────
 
 @app.post("/api/estimate")

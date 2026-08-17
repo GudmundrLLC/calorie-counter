@@ -170,7 +170,7 @@ select{font-family:'Libre Baskerville',Georgia,serif;font-size:0.8rem;padding:0.
     <div class="user-bar">
       {% if user and user.email != 'local@dev' %}
         {{ user.name or user.email }}<br>
-        <a href="/logout">Sign Out</a>
+        <a href="/journal">Journal</a> · <a href="/logout">Sign Out</a>
       {% endif %}
     </div>
   </header>

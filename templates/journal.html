@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal — Calorie & Blood Sugar Tracker</title>
+<script>(function(){try{var q=new URLSearchParams(location.search).get("theme");var t;if(q==="light"||q==="dark"){t=q;try{localStorage.setItem("theme",t)}catch(_){}}else{t=localStorage.getItem("theme")||"light"}document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--brand:#502379;--brand-mid:#6b2f9e;--brand-dark:#3a1858;--teal:#00a0a0;--teal-dark:#007a7a;--ink:#1a1a1a;--ink-mid:#3a3a3a;--ink-light:#666;--ink-faint:#999;--rule:#c8c8c8;--rule-light:#e4e4e4;--rule-faint:#f0f0f0;--page:#fefcf8;--cream:#f8f6f2;--brand-tint:#f7f4fb;--red:#c0392b;--green:#1e7e34;--amber:#b8860b}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--cream);color:var(--ink);line-height:1.6;min-height:100vh}
+.app{max-width:720px;margin:0 auto;padding:2rem 1.5rem 4rem}
+.masthead{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:1.5rem;margin-bottom:2rem;border-bottom:2px double var(--rule)}
+.masthead h1{font-size:2.2rem;font-weight:400;letter-spacing:-0.02em;line-height:1.1}
+.masthead .subtitle{font-family:'Libre Baskerville',Georgia,serif;font-size:0.82rem;color:var(--ink-light);margin-top:0.25rem;letter-spacing:0.03em}
+.user-bar{font-size:0.8rem;color:var(--ink-faint);text-align:right}
+.user-bar a{color:var(--brand);text-decoration:none;font-family:'Libre Baskerville',Georgia,serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-left:0.9rem}
+.user-bar a:hover{text-decoration:underline}
+.meta{font-family:'Libre Baskerville',Georgia,serif;font-size:0.72rem;color:var(--ink-faint);letter-spacing:0.03em;margin-bottom:1.5rem}
+.empty{padding:2rem 0;text-align:center;color:var(--ink-light);font-style:italic}
+.entry{padding:1.25rem 0;border-bottom:1px solid var(--rule-light)}
+.entry:last-child{border-bottom:none}
+.entry-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem;gap:1rem;flex-wrap:wrap}
+.entry-date{font-family:'Libre Baskerville',Georgia,serif;font-size:0.78rem;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:1px}
+.entry-mood{font-family:'Libre Baskerville',Georgia,serif;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;padding:0.15rem 0.5rem;border-radius:2px;background:var(--brand-tint);color:var(--brand-dark)}
+.entry-mood.great{background:#e8f5e9;color:var(--green)}
+.entry-mood.good{background:#f0fbf2;color:var(--green)}
+.entry-mood.okay{background:var(--brand-tint);color:var(--brand-dark)}
+.entry-mood.tough{background:#fff4e0;color:var(--amber)}
+.entry-mood.rough{background:#fbe8e5;color:var(--red)}
+.entry-content{font-size:1rem;color:var(--ink-mid);white-space:pre-wrap;word-wrap:break-word}
+.entry-tags{margin-top:0.5rem;font-family:'Libre Baskerville',Georgia,serif;font-size:0.68rem;color:var(--ink-faint);letter-spacing:0.03em}
+@media (max-width:520px){
+  .masthead{flex-direction:column;text-align:center}
+  .masthead h1{font-size:1.7rem}
+  .user-bar{text-align:center;margin-top:0.5rem}
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="masthead">
+    <div>
+      <h1>Journal</h1>
+      <p class="subtitle">Imported from Family Alignment.</p>
+    </div>
+    <div class="user-bar">
+      {% if user and user.email != 'local@dev' %}{{ user.name or user.email }}<br>{% endif %}
+      <a href="/">Tracker</a>
+      <a href="/logout">Sign Out</a>
+    </div>
+  </header>
+
+  <p class="meta">{{ entries|length }} entr{{ 'y' if entries|length == 1 else 'ies' }} for {{ user.email }}</p>
+
+  {% if entries %}
+    {% for e in entries %}
+      <article class="entry">
+        <div class="entry-head">
+          <span class="entry-date">{{ e.entry_date }}</span>
+          {% if e.mood %}<span class="entry-mood {{ e.mood }}">{{ e.mood }}</span>{% endif %}
+        </div>
+        <div class="entry-content">{{ e.content }}</div>
+        {% if e.tags %}<div class="entry-tags">{{ e.tags }}</div>{% endif %}
+      </article>
+    {% endfor %}
+  {% else %}
+    <p class="empty">No journal entries mapped to {{ user.email }} yet.</p>
+  {% endif %}
+</main>
+</body>
+</html>
