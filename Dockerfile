@@ -15,4 +15,4 @@ RUN mkdir -p /app/data /app/uploads
 ENV DEPLOY_MODE=railway
 ENV PORT=8000
 
-CMD python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2
