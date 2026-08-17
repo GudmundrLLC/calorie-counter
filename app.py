@@ -707,7 +707,20 @@ async def api_photo(filename: str):
     return FileResponse(str(p))
 
 
+def _bearer_admin_ok(request: Request) -> bool:
+    expected = FA_SYNC_TOKEN.strip()
+    if not expected:
+        return False
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return False
+    presented = header.split(" ", 1)[1].strip()
+    return bool(presented) and presented == expected
+
+
 def _require_admin(request: Request):
+    if _bearer_admin_ok(request):
+        return {"email": "service:fa-sync", "name": "FA Sync Service"}
     user = _require_auth(request)
     if not ADMIN_EMAILS or user["email"].lower() not in ADMIN_EMAILS:
         raise HTTPException(403, "Admin only")
