@@ -800,6 +800,13 @@ def _upsert_journal_rows(rows: list[dict], aemails: list[dict]) -> tuple[int, in
     conn = get_db()
     imported = updated = 0
     now = datetime.now().isoformat()
+    # Seed allowed_emails so family members can sign in with any address FA
+    # reports for them. Without this, _current_user silently signs them out
+    # (ADMIN_EMAILS + allowed_emails are the only two whitelists).
+    for r in aemails:
+        em = (r.get("email") or "").strip()
+        if em:
+            conn.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (em,))
     for r in rows:
         member_name = (r.get("member_name") or "").strip()
         entry_date = r.get("entry_date") or ""
@@ -883,59 +890,6 @@ async def api_admin_sync_journal_upsert(request: Request):
     )
     return {"ok": True, "imported": imported, "updated": updated,
             "total_rows": imported + updated, "source": "posted"}
-
-
-@app.get("/api/admin/journal-preview", response_class=HTMLResponse)
-async def api_admin_journal_preview(request: Request, email: str):
-    """Render /journal for an arbitrary email — bearer-authed, mirrors the
-    real handler exactly so we can verify template rendering without OAuth."""
-    _require_admin(request)
-    conn = get_db()
-    rows = conn.execute(
-        """SELECT je.entry_date, je.content, je.mood, je.tags
-           FROM journal_entries je
-           JOIN journal_entry_email jee ON jee.journal_id = je.id
-           WHERE jee.email = ? COLLATE NOCASE
-           ORDER BY je.entry_date DESC, je.source_created_at DESC""",
-        (email,),
-    ).fetchall()
-    conn.close()
-    fake_user = {"email": email, "name": f"preview({email})", "picture_url": None}
-    tpl = _jinja.get_template("journal.html")
-    return HTMLResponse(tpl.render(user=fake_user, entries=[dict(r) for r in rows]))
-
-
-@app.get("/api/whoami")
-async def api_whoami(request: Request):
-    """Return the current session's email + what /journal would render for it.
-    Public (no admin gate) — safe: only reveals YOUR own session state."""
-    session_email = request.session.get("user_email")
-    if not session_email:
-        return {"signed_in": False, "session_email": None, "journal_row_count": 0}
-    conn = get_db()
-    n = conn.execute(
-        """SELECT COUNT(*) AS n FROM journal_entries je
-           JOIN journal_entry_email jee ON jee.journal_id = je.id
-           WHERE jee.email = ? COLLATE NOCASE""",
-        (session_email,),
-    ).fetchone()["n"]
-    allowed = conn.execute(
-        "SELECT 1 FROM allowed_emails WHERE email=? COLLATE NOCASE", (session_email,)
-    ).fetchone()
-    conn.close()
-    return {"signed_in": True,
-            "session_email": session_email,
-            "in_allowed_emails": bool(allowed),
-            "journal_row_count": n}
-
-
-@app.get("/api/admin/allowed-emails")
-async def api_admin_allowed_emails(request: Request):
-    _require_admin(request)
-    conn = get_db()
-    rows = conn.execute("SELECT email FROM allowed_emails ORDER BY email").fetchall()
-    conn.close()
-    return {"count": len(rows), "emails": [r["email"] for r in rows]}
 
 
 @app.get("/api/admin/journal-stats")
