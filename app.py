@@ -183,6 +183,27 @@ def init_db():
         "ON entries(source, source_key) WHERE source <> ''"
     )
 
+    # Outbound sync queue for CYC → FA push (reliable, with retry).
+    # A flusher thread claims rows via processing_until (stale-lock recovery
+    # in case a worker dies mid-POST). completed_at NULL = still pending.
+    conn.execute("""CREATE TABLE IF NOT EXISTS outbound_sync (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        target            TEXT NOT NULL,
+        endpoint_url      TEXT NOT NULL,
+        payload_json      TEXT NOT NULL,
+        source_ref        TEXT,
+        attempts          INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        processing_until  TEXT,
+        last_error        TEXT,
+        completed_at      TEXT,
+        created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    )""")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_outbound_pending "
+        "ON outbound_sync(next_attempt_at) WHERE completed_at IS NULL"
+    )
+
     # Seed admin emails
     for em in ADMIN_EMAILS:
         conn.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (em,))
@@ -344,11 +365,147 @@ def _save_entry(user_email, input_type, raw_input, result, photo_filename=None):
           result.get("confidence", "medium"),
           result.get("meal_type", _guess_meal()),
           result.get("notes", ""), today, now, now))
+    # Enqueue outbound push to FA. Backfilled fa_journal rows never come
+    # through _save_entry(), so this path is only for user-created entries —
+    # loop prevention is structural (source column stays '').
+    _enqueue_cyc_entry_to_fa(conn, eid)
     conn.commit()
     conn.close()
     result.update(id=eid, entry_date=today, created_at=now,
                   raw_input=raw_input, input_type=input_type)
     return result
+
+
+def _format_cyc_entry_for_fa_content(user_email: str, raw_input: str,
+                                     items: list, total_calories: float,
+                                     notes: str = "") -> str:
+    """Build the enriched text a CYC calorie entry becomes when it lands in FA
+    as a journal entry: the raw input plus a bulleted breakdown and total."""
+    lines = [raw_input.strip() if raw_input else ""]
+    lines.append("")
+    if items:
+        for it in items:
+            name = it.get("name") or it.get("food") or "item"
+            cal = it.get("calories", it.get("kcal", 0))
+            qty = it.get("quantity") or it.get("portion") or ""
+            qty_str = f" ({qty})" if qty else ""
+            lines.append(f"- {name}{qty_str}: {cal} kcal")
+    lines.append(f"Total: {int(round(total_calories))} kcal")
+    if notes:
+        lines.append(f"Notes: {notes}")
+    return "\n".join(lines).strip()
+
+
+def _enqueue_cyc_entry_to_fa(conn, entry_id: str) -> None:
+    """Read the just-inserted entries row and enqueue a push to FA's
+    /api/v1/sync/inbound-cyc-journal. Uses the same conn/transaction as the
+    caller so enqueue is atomic with the entry write."""
+    if not (FA_BASE_URL and FA_SYNC_TOKEN):
+        return
+    row = conn.execute(
+        "SELECT id, user_email, raw_input, items, total_calories, notes, "
+        "entry_date, created_at FROM entries WHERE id = ?",
+        (entry_id,),
+    ).fetchone()
+    if not row:
+        return
+    try:
+        items = json.loads(row["items"] or "[]")
+    except Exception:
+        items = []
+    content = _format_cyc_entry_for_fa_content(
+        user_email=row["user_email"], raw_input=row["raw_input"],
+        items=items, total_calories=row["total_calories"] or 0,
+        notes=row["notes"] or "",
+    )
+    payload = {
+        "cyc_entry_id": row["id"],
+        "user_email": row["user_email"],
+        "content": content,
+        "entry_date": row["entry_date"],
+        "entry_time": row["created_at"][11:16] if row["created_at"] else None,
+        "tags": "cyc:calorie",
+    }
+    conn.execute(
+        "INSERT INTO outbound_sync (target, endpoint_url, payload_json, source_ref) "
+        "VALUES (?, ?, ?, ?)",
+        ("fa", f"{FA_BASE_URL}/api/v1/sync/inbound-cyc-journal",
+         json.dumps(payload), f"entries:{entry_id}"),
+    )
+
+
+def _flush_outbound_sync_once(max_jobs: int = 10) -> dict:
+    """Claim up to max_jobs pending outbound rows and POST each. Multi-worker
+    safe via processing_until (5-min lease; stale leases auto-reclaimed)."""
+    import httpx
+    conn = get_db()
+    lease_until = (datetime.now() + timedelta(minutes=5)).isoformat()
+    now_iso = datetime.now().isoformat()
+    claimed = []
+    # Race-safe claim: only rows past their next_attempt_at, not currently held.
+    pending = conn.execute(
+        "SELECT id FROM outbound_sync WHERE completed_at IS NULL "
+        "AND next_attempt_at <= ? "
+        "AND (processing_until IS NULL OR processing_until < ?) "
+        "ORDER BY id ASC LIMIT ?",
+        (now_iso, now_iso, max_jobs),
+    ).fetchall()
+    for r in pending:
+        cur = conn.execute(
+            "UPDATE outbound_sync SET processing_until = ? "
+            "WHERE id = ? AND completed_at IS NULL "
+            "AND (processing_until IS NULL OR processing_until < ?)",
+            (lease_until, r["id"], now_iso),
+        )
+        if cur.rowcount == 1:
+            claimed.append(r["id"])
+    conn.commit()
+
+    processed, failed = 0, 0
+    for job_id in claimed:
+        job = conn.execute(
+            "SELECT endpoint_url, payload_json, attempts FROM outbound_sync WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        if not job:
+            continue
+        try:
+            resp = httpx.post(
+                job["endpoint_url"],
+                headers={"Authorization": f"Bearer {FA_SYNC_TOKEN}",
+                         "Content-Type": "application/json"},
+                content=job["payload_json"],
+                timeout=15.0,
+            )
+            if 200 <= resp.status_code < 300:
+                conn.execute(
+                    "UPDATE outbound_sync SET completed_at = ?, processing_until = NULL, "
+                    "last_error = NULL WHERE id = ?",
+                    (datetime.now().isoformat(), job_id),
+                )
+                processed += 1
+            else:
+                _outbound_backoff(conn, job_id, job["attempts"],
+                                  f"HTTP {resp.status_code}: {resp.text[:200]}")
+                failed += 1
+        except Exception as e:
+            _outbound_backoff(conn, job_id, job["attempts"], str(e)[:200])
+            failed += 1
+    conn.commit()
+    conn.close()
+    return {"claimed": len(claimed), "processed": processed, "failed": failed}
+
+
+def _outbound_backoff(conn, job_id: int, prior_attempts: int, error: str) -> None:
+    """Exponential backoff on failure: 30s, 2m, 8m, 32m, 2h, 8h, capped."""
+    next_attempts = prior_attempts + 1
+    delay_seconds = min(30 * (4 ** prior_attempts), 8 * 3600)
+    next_at = (datetime.now() + timedelta(seconds=delay_seconds)).isoformat()
+    conn.execute(
+        "UPDATE outbound_sync SET attempts = ?, next_attempt_at = ?, "
+        "processing_until = NULL, last_error = ? WHERE id = ?",
+        (next_attempts, next_at, error, job_id),
+    )
 
 
 def _row_to_dict(row):
@@ -363,6 +520,25 @@ def _row_to_dict(row):
 @app.on_event("startup")
 async def startup():
     setup_oauth()
+    _start_outbound_flusher()
+
+
+def _start_outbound_flusher(interval_seconds: int = 30) -> None:
+    """Kick off a background thread that flushes the outbound_sync queue every
+    `interval_seconds`. Multi-worker safe (uvicorn workers each run one thread;
+    row-level lease claiming prevents duplicate POSTs). Silent no-op if the
+    FA target isn't configured."""
+    if not (FA_BASE_URL and FA_SYNC_TOKEN):
+        return
+    import threading, time
+    def _loop():
+        while True:
+            try:
+                _flush_outbound_sync_once()
+            except Exception as e:
+                print(f"[outbound_flusher] error: {e}")
+            time.sleep(interval_seconds)
+    threading.Thread(target=_loop, daemon=True, name="outbound_flusher").start()
 
 
 @app.get("/login", response_class=HTMLResponse)
