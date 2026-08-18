@@ -186,6 +186,8 @@ def init_db():
     # Outbound sync queue for CYC → FA push (reliable, with retry).
     # A flusher thread claims rows via processing_until (stale-lock recovery
     # in case a worker dies mid-POST). completed_at NULL = still pending.
+    # mirror_consumed_at is set by the local sync orchestrator when it has
+    # durably copied the row into local SQLite — independent of live delivery.
     conn.execute("""CREATE TABLE IF NOT EXISTS outbound_sync (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,
         target            TEXT NOT NULL,
@@ -199,9 +201,17 @@ def init_db():
         completed_at      TEXT,
         created_at        TEXT NOT NULL DEFAULT (datetime('now'))
     )""")
+    try:
+        conn.execute("ALTER TABLE outbound_sync ADD COLUMN mirror_consumed_at TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_outbound_pending "
         "ON outbound_sync(next_attempt_at) WHERE completed_at IS NULL"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_outbound_mirror "
+        "ON outbound_sync(id) WHERE mirror_consumed_at IS NULL"
     )
 
     # Seed admin emails
@@ -1294,6 +1304,52 @@ def _insert_journal_calorie_entry(conn, journal_row, estimate_result,
           estimate_result.get("notes", ""),
           entry_date, now, now,
           "fa_journal", source_key))
+
+
+@app.get("/api/admin/outbound-pending")
+async def api_admin_outbound_pending(request: Request, since_id: int = 0, limit: int = 100):
+    """Local sync orchestrator polls this to mirror queue rows to local
+    SQLite. Returns rows with id > since_id that haven't been mirror-consumed
+    yet. Includes completed AND still-pending rows so the orchestrator gets
+    a full picture regardless of live-delivery state."""
+    _require_admin(request)
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT id, target, endpoint_url, payload_json, source_ref, attempts,
+                  next_attempt_at, last_error, completed_at, created_at
+             FROM outbound_sync
+            WHERE id > ? AND mirror_consumed_at IS NULL
+            ORDER BY id ASC LIMIT ?""",
+        (since_id, limit),
+    ).fetchall()
+    conn.close()
+    return {"app": "cyc", "count": len(rows),
+            "rows": [dict(r) for r in rows]}
+
+
+@app.post("/api/admin/outbound-ack")
+async def api_admin_outbound_ack(request: Request):
+    """Local orchestrator calls this after successfully mirroring rows into
+    local SQLite. Marks mirror_consumed_at so future polls skip them."""
+    _require_admin(request)
+    body = await request.json()
+    ids = body.get("ids") or []
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        raise HTTPException(400, "ids must be a list of integers")
+    now = datetime.now().isoformat()
+    conn = get_db()
+    placeholders = ",".join("?" * len(ids)) if ids else "NULL"
+    n = 0
+    if ids:
+        cur = conn.execute(
+            f"UPDATE outbound_sync SET mirror_consumed_at = ? "
+            f"WHERE id IN ({placeholders}) AND mirror_consumed_at IS NULL",
+            [now] + ids,
+        )
+        n = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": True, "acked": n}
 
 
 @app.get("/health")
