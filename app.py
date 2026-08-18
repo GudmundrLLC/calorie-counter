@@ -1068,6 +1068,49 @@ async def api_admin_sync_journal_upsert(request: Request):
             "total_rows": imported + updated, "source": "posted"}
 
 
+@app.post("/api/admin/sync/journal-delete")
+async def api_admin_sync_journal_delete(request: Request):
+    """Propagate a FA journal-entry deletion into CYC. Identifies the row by
+    (source='fa', source_key='{member_name}|{entry_date}|{created_at}') —
+    the same identity used by _upsert_journal_rows for idempotent inserts.
+
+    Cascades: journal_entry_email (FK CASCADE) + any backfilled `entries`
+    rows written with source='fa_journal' + source_key='{journal_id}:*'
+    (the per-email calorie fanout). Manual food logs on the same day are
+    untouched — they have source='' and are user-authored calorie data,
+    not tied to the deleted journal entry."""
+    _require_admin(request)
+    body = await request.json()
+    member_name = (body.get("member_name") or "").strip()
+    entry_date = (body.get("entry_date") or "").strip()
+    created_at = (body.get("created_at") or "").strip()
+    if not (member_name and entry_date and created_at):
+        raise HTTPException(400, "member_name, entry_date, created_at required")
+
+    source_key = f"{member_name}|{entry_date}|{created_at}"
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id FROM journal_entries WHERE source='fa' AND source_key=?",
+        (source_key,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": True, "deleted": False, "reason": "not_found",
+                "source_key": source_key}
+    journal_id = row["id"]
+
+    entries_deleted = conn.execute(
+        "DELETE FROM entries WHERE source='fa_journal' AND source_key LIKE ?",
+        (f"{journal_id}:%",),
+    ).rowcount
+    conn.execute("DELETE FROM journal_entries WHERE id = ?", (journal_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "deleted": True, "journal_id": journal_id,
+            "backfilled_entries_deleted": entries_deleted,
+            "source_key": source_key}
+
+
 @app.get("/api/admin/journal-stats")
 async def api_admin_journal_stats(request: Request):
     _require_admin(request)
