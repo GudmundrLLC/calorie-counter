@@ -13,12 +13,21 @@
 html{font-size:16px}
 body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--cream);color:var(--ink);line-height:1.6;min-height:100vh}
 .app{max-width:720px;margin:0 auto;padding:2rem 1.5rem 4rem}
-.masthead{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:1.5rem;margin-bottom:2rem;border-bottom:2px double var(--rule)}
+.masthead{display:flex;justify-content:space-between;align-items:center;padding-bottom:1.5rem;margin-bottom:2rem;border-bottom:2px double var(--rule);gap:1rem}
 .masthead h1{font-size:2.2rem;font-weight:400;letter-spacing:-0.02em;line-height:1.1}
 .masthead .subtitle{font-family:'Libre Baskerville',Georgia,serif;font-size:0.82rem;color:var(--ink-light);margin-top:0.25rem;letter-spacing:0.03em}
-.user-bar{font-size:0.8rem;color:var(--ink-faint);text-align:right}
-.user-bar a{color:var(--brand);text-decoration:none;font-family:'Libre Baskerville',Georgia,serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-left:0.9rem}
-.user-bar a:hover{text-decoration:underline}
+.hamburger{position:relative}
+.hamburger-btn{background:none;border:1px solid var(--rule);border-radius:4px;padding:0.45rem 0.55rem;cursor:pointer;color:var(--ink-mid);display:inline-flex;flex-direction:column;gap:4px;line-height:0;transition:border-color 0.15s,color 0.15s}
+.hamburger-btn:hover{border-color:var(--brand);color:var(--brand)}
+.hamburger-btn span{display:block;width:18px;height:2px;background:currentColor;border-radius:1px}
+.hamburger-panel{position:absolute;right:0;top:calc(100% + 6px);background:var(--page);border:1px solid var(--rule);border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,0.10);min-width:200px;padding:0.4rem 0;z-index:30;display:none}
+.hamburger.open .hamburger-panel{display:block}
+.hamburger-user{padding:0.5rem 0.95rem;font-family:'Libre Baskerville',Georgia,serif;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-faint);border-bottom:1px solid var(--rule-light);margin-bottom:0.25rem}
+.hamburger-panel a{display:block;padding:0.55rem 0.95rem;font-family:'Libre Baskerville',Georgia,serif;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--brand);text-decoration:none}
+.hamburger-panel a:hover{background:var(--brand-tint)}
+.hamburger-panel .divider{height:1px;background:var(--rule-light);margin:0.3rem 0}
+.hamburger-panel a.signout{color:var(--red)}
+.hamburger-panel a.signout:hover{background:#fbe8e5}
 .meta{font-family:'Libre Baskerville',Georgia,serif;font-size:0.72rem;color:var(--ink-faint);letter-spacing:0.03em;margin-bottom:1.5rem}
 .empty{padding:2rem 0;text-align:center;color:var(--ink-light);font-style:italic}
 .entry{padding:1.25rem 0;border-bottom:1px solid var(--rule-light)}
@@ -34,9 +43,9 @@ body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--
 .entry-content{font-size:1rem;color:var(--ink-mid);white-space:pre-wrap;word-wrap:break-word}
 .entry-tags{margin-top:0.5rem;font-family:'Libre Baskerville',Georgia,serif;font-size:0.68rem;color:var(--ink-faint);letter-spacing:0.03em}
 @media (max-width:520px){
-  .masthead{flex-direction:column;text-align:center}
+  .masthead{align-items:center}
   .masthead h1{font-size:1.7rem}
-  .user-bar{text-align:center;margin-top:0.5rem}
+  .hamburger-panel{min-width:180px}
 }
 </style>
 </head>
@@ -47,12 +56,50 @@ body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--
       <h1>Journal</h1>
       <p class="subtitle">Imported from Family Alignment.</p>
     </div>
-    <div class="user-bar">
-      {% if user and user.email != 'local@dev' %}{{ user.name or user.email }}<br>{% endif %}
-      <a href="/">Tracker</a>
-      <a href="/logout">Sign Out</a>
+    <div class="hamburger" id="mainMenu">
+      <button class="hamburger-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mainMenuPanel" onclick="toggleMenu(event)">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="hamburger-panel" id="mainMenuPanel" role="menu">
+        {% if user and user.email != 'local@dev' %}
+          <div class="hamburger-user">{{ user.name or user.email }}</div>
+        {% endif %}
+        <a href="/" role="menuitem">Tracker</a>
+        <a href="/journal" role="menuitem">Journal</a>
+        <a href="/report" role="menuitem" target="_blank">Print Report</a>
+        <a href="/api/export?days=30" role="menuitem" target="_blank">Export JSON</a>
+        {% if user and user.email != 'local@dev' %}
+          <div class="divider"></div>
+          <a href="/logout" role="menuitem" class="signout">Sign Out</a>
+        {% endif %}
+      </div>
     </div>
   </header>
+  <script>
+    function toggleMenu(e){
+      if(e) e.stopPropagation();
+      const m=document.getElementById('mainMenu');
+      const btn=m.querySelector('.hamburger-btn');
+      const open=m.classList.toggle('open');
+      btn.setAttribute('aria-expanded',open?'true':'false');
+    }
+    document.addEventListener('click',function(e){
+      const m=document.getElementById('mainMenu');
+      if(m && !m.contains(e.target)){
+        m.classList.remove('open');
+        m.querySelector('.hamburger-btn').setAttribute('aria-expanded','false');
+      }
+    });
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape'){
+        const m=document.getElementById('mainMenu');
+        if(m && m.classList.contains('open')){
+          m.classList.remove('open');
+          m.querySelector('.hamburger-btn').setAttribute('aria-expanded','false');
+        }
+      }
+    });
+  </script>
 
   <p class="meta">{{ entries|length }} entr{{ 'y' if entries|length == 1 else 'ies' }} for {{ user.email }}</p>
 
