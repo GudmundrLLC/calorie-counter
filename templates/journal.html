@@ -4,11 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Journal — Calorie & Blood Sugar Tracker</title>
-<script>(function(){try{var q=new URLSearchParams(location.search).get("theme");var t;if(q==="light"||q==="dark"){t=q;try{localStorage.setItem("theme",t)}catch(_){}}else{t=localStorage.getItem("theme")||"light"}document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script>
+<script>(function(){try{var q=new URLSearchParams(location.search).get("theme");var t;if(q==="light"||q==="dark"){t=q;try{localStorage.setItem("theme",t)}catch(_){}}else{t=localStorage.getItem("theme")||"light"}document.documentElement.setAttribute("data-theme",t);if(localStorage.getItem("high_contrast")==="1"){document.documentElement.classList.add("high-contrast")}}catch(_){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
-:root{--brand:#502379;--brand-mid:#6b2f9e;--brand-dark:#3a1858;--teal:#00a0a0;--teal-dark:#007a7a;--ink:#1a1a1a;--ink-mid:#3a3a3a;--ink-light:#666;--ink-faint:#999;--rule:#c8c8c8;--rule-light:#e4e4e4;--rule-faint:#f0f0f0;--page:#fefcf8;--cream:#f8f6f2;--brand-tint:#f7f4fb;--red:#c0392b;--green:#1e7e34;--amber:#b8860b}
+:root{--brand:#502379;--brand-mid:#6b2f9e;--brand-dark:#3a1858;--teal:#00a0a0;--teal-dark:#007a7a;--ink:#1a1a1a;--ink-mid:#3a3a3a;--ink-light:#666;--ink-faint:#999;--rule:#c8c8c8;--rule-light:#e4e4e4;--rule-faint:#f0f0f0;--page:#fefcf8;--cream:#f8f6f2;--cream-dark:#f2ede4;--brand-tint:#f7f4fb;--teal-tint:#edfafa;--red:#c0392b;--green:#1e7e34;--amber:#b8860b}
+[data-theme="dark"]{--brand:#a78bfa;--brand-mid:#b794f6;--brand-dark:#8b5cf6;--teal:#67e8f9;--teal-dark:#22d3ee;--ink:#e8e6f0;--ink-mid:#c0b8d0;--ink-light:#9089a5;--ink-faint:#6b6580;--rule:#4a4258;--rule-light:#3a3348;--rule-faint:#2a2438;--page:#1a1428;--cream:#1e1832;--cream-dark:#2a1e40;--brand-tint:#2a1e40;--teal-tint:#1c2830;--red:#f87171;--green:#4ade80;--amber:#fbbf24}
+.high-contrast,.high-contrast[data-theme="dark"]{--brand:#000;--brand-mid:#000;--brand-dark:#000;--teal:#000;--teal-dark:#000;--ink:#000;--ink-mid:#000;--ink-light:#111;--ink-faint:#222;--rule:#000;--rule-light:#666;--rule-faint:#888;--page:#fff;--cream:#fff;--cream-dark:#f0f0f0;--brand-tint:#eee;--teal-tint:#eee;--red:#8b0000;--green:#004d00;--amber:#663d00}
+.hamburger-panel a.signout:hover{background:var(--red);color:#fff}
+.hamburger-panel .theme-row{border-top:1px solid var(--rule-light);padding:0.5rem 0.95rem 0.6rem;display:flex;flex-direction:column;gap:0.4rem}
+.hamburger-panel .theme-row label{display:flex;align-items:center;justify-content:space-between;font-family:'Libre Baskerville',Georgia,serif;font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-light);cursor:pointer}
+.hamburger-panel .theme-row .toggle{position:relative;width:36px;height:20px;background:var(--rule);border-radius:10px;transition:background 0.15s}
+.hamburger-panel .theme-row .toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--page);transition:transform 0.15s;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.hamburger-panel .theme-row input:checked+.toggle{background:var(--brand)}
+.hamburger-panel .theme-row input:checked+.toggle::after{transform:translateX(16px)}
+.hamburger-panel .theme-row input{position:absolute;opacity:0;pointer-events:none}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:16px}
 body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--cream);color:var(--ink);line-height:1.6;min-height:100vh}
@@ -68,6 +78,16 @@ body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--
         <a href="/journal" role="menuitem">Journal</a>
         <a href="/report" role="menuitem" target="_blank">Print Report</a>
         <a href="/api/export?days=30" role="menuitem" target="_blank">Export JSON</a>
+        <div class="theme-row" role="group" aria-label="Display">
+          <label>Dark mode
+            <input type="checkbox" id="themeToggle" onchange="toggleTheme(this)">
+            <span class="toggle"></span>
+          </label>
+          <label>High contrast
+            <input type="checkbox" id="hcToggle" onchange="toggleHighContrast(this)">
+            <span class="toggle"></span>
+          </label>
+        </div>
         {% if user and user.email != 'local@dev' %}
           <div class="divider"></div>
           <a href="/logout" role="menuitem" class="signout">Sign Out</a>
@@ -99,6 +119,21 @@ body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--
         }
       }
     });
+    function toggleTheme(el){
+      const t=el.checked?'dark':'light';
+      document.documentElement.setAttribute('data-theme',t);
+      try{localStorage.setItem('theme',t)}catch(_){}
+    }
+    function toggleHighContrast(el){
+      document.documentElement.classList.toggle('high-contrast',el.checked);
+      try{localStorage.setItem('high_contrast',el.checked?'1':'0')}catch(_){}
+    }
+    (function syncToggles(){
+      var tt=document.getElementById('themeToggle');
+      var hc=document.getElementById('hcToggle');
+      if(tt) tt.checked=document.documentElement.getAttribute('data-theme')==='dark';
+      if(hc) hc.checked=document.documentElement.classList.contains('high-contrast');
+    })();
   </script>
 
   <p class="meta">{{ entries|length }} entr{{ 'y' if entries|length == 1 else 'ies' }} for {{ user.email }}</p>

@@ -4,9 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign In — Calorie Counter</title>
+<script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);if(localStorage.getItem("high_contrast")==="1"){document.documentElement.classList.add("high-contrast")}}catch(_){}})();</script>
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root { --brand:#502379; --ink:#1a1a1a; --ink-light:#666; --page:#fefcf8; --cream:#f8f6f2; --rule-light:#e4e4e4; --red:#c0392b; }
+[data-theme="dark"]{--brand:#a78bfa;--ink:#e8e6f0;--ink-light:#9089a5;--page:#1e1832;--cream:#1a1428;--rule-light:#3a3348;--red:#f87171}
+.high-contrast,.high-contrast[data-theme="dark"]{--brand:#000;--ink:#000;--ink-light:#111;--page:#fff;--cream:#fff;--rule-light:#666;--red:#8b0000}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'EB Garamond',Georgia,serif;background:var(--cream);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center}
 .login-card{background:var(--page);border:1px solid var(--rule-light);border-radius:6px;padding:3rem 2.5rem;max-width:380px;width:100%;text-align:center}
