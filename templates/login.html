@@ -21,6 +21,18 @@ h1{font-size:2rem;font-weight:400;letter-spacing:-0.02em;margin-bottom:0.3rem}
 .error{color:var(--red);font-size:0.85rem;margin-bottom:1rem}
 .note{font-size:0.75rem;color:var(--ink-light);margin-top:1.5rem}
 </style>
+    <!-- ECOSYSTEM_SIDECAR_WIRING_v2 · bp-demo cross-app sidecar (2026-09-24) -->
+    <script>
+      (function(){
+        var qs = new URLSearchParams(window.location.search);
+        if (qs.get('sidecar') === '1') document.documentElement.setAttribute('data-sidecar', '1');
+        var t = qs.get('theme'); if (t) document.documentElement.setAttribute('data-theme', t);
+        var hc = qs.get('hc');    if (hc !== null) document.documentElement.setAttribute('data-hc', hc);
+        var d = qs.get('d');      if (d) document.documentElement.setAttribute('data-density', d);
+      })();
+    </script>
+    <script src="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-bridge.js?v=2"></script>
+    <link rel="stylesheet" href="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-sidecar.css?v=2">
 </head>
 <body>
 <div class="login-card">

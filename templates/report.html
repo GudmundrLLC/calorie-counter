@@ -60,6 +60,18 @@ tr:nth-child(even){background:var(--cream)}
 @media(max-width:600px){.two-col{grid-template-columns:1fr}}
 @media print{.two-col{grid-template-columns:1fr 1fr}}
 </style>
+    <!-- ECOSYSTEM_SIDECAR_WIRING_v2 · bp-demo cross-app sidecar (2026-09-24) -->
+    <script>
+      (function(){
+        var qs = new URLSearchParams(window.location.search);
+        if (qs.get('sidecar') === '1') document.documentElement.setAttribute('data-sidecar', '1');
+        var t = qs.get('theme'); if (t) document.documentElement.setAttribute('data-theme', t);
+        var hc = qs.get('hc');    if (hc !== null) document.documentElement.setAttribute('data-hc', hc);
+        var d = qs.get('d');      if (d) document.documentElement.setAttribute('data-density', d);
+      })();
+    </script>
+    <script src="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-bridge.js?v=2"></script>
+    <link rel="stylesheet" href="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-sidecar.css?v=2">
 </head>
 <body>
 
