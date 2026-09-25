@@ -1,0 +1,439 @@
+{# ── Global Selectors — Bottom-Right Floating Panel ──────────────────────
+
+Shared across every base template (default / epm_sidebar / board / glassmorph).
+Renders Style / Data / UI switchers PLUS an Apps section (external EPM tools)
+in a collapsible panel so it doesn't eat viewport real estate when idle.
+
+2026-09-08:
+  · Apps section added (TM1, Essbase, plus room for future external tools).
+  · Panel is now collapsible — click ⚙ chip to expand, ✕ to collapse.
+    Collapsed state persists in localStorage (key `bpd:gs:collapsed`).
+  · Sections (Style/Data/UI/Apps) are visually grouped with dividers.
+  · Now included in tufte base.html too — was previously non-tufte only.
+
+Optional Jinja variables (all safe to omit):
+  panel_bg:      CSS background for the panel (default: dark purple gradient)
+  panel_font:    CSS font-family (default: 'Mulish', sans-serif)
+  panel_text:    CSS color for labels + select text
+  panel_border:  CSS border for the panel
+
+See docs/theming-guide.md §3 for the new-theme recipe.
+────────────────────────────────────────────────────────────────────────── #}
+{% set _bg     = panel_bg     | default("linear-gradient(135deg, #253E7D 0%, #443D96 50%, #753AD0 100%)") %}
+{% set _font   = panel_font   | default("'Mulish', system-ui, -apple-system, sans-serif") %}
+{% set _txt    = panel_text   | default("#FFFFFF") %}
+{% set _lbl    = label_color  | default(_txt) %}
+{% set _border = panel_border | default("1px solid rgba(255,255,255,0.15)") %}
+
+<style>
+    #globalSelectors {
+        /* Two-layout positioning (2026-09-05 revision 3 — user asked for
+           Settings FAR RIGHT in both, Copilot/Ask AI just to its left):
+           · Tufte (default) — quartet at bottom:84px, right→left:
+             Settings (right:1rem, rightmost) · Copilot (right:4.2rem) ·
+             Presenter (right:7.4rem) · Coach (right:10.6rem, leftmost).
+           · Vendor themes (:has(.vai-toggle)) — right→left:
+             Settings (right:16px) · Ask AI (right:70px) · Presenter (right:124px). */
+        position: fixed; bottom: 84px; right: 1rem; z-index: 9500;
+        font-family: {{ _font }};
+        transition: opacity 0.15s ease;
+    }
+    body:has(.vai-toggle) #globalSelectors {
+        bottom: 84px; right: 16px;
+    }
+    /* Nav v2·1 phase 1c · Settings panel moved into the shared right-drawer
+       (window.RightDrawer). The wrapper stays here only to anchor the ⚙ chip;
+       .gs-panel now lives in <div id="drawer-content-settings"> below and gets
+       adopted into the drawer body on open. Active state is driven by
+       `#globalSelectors.rd-active` set by RightDrawer's onOpen/onClose
+       callbacks in gsToggle(). #}
+    #globalSelectors.rd-active .gs-chip {
+        background: var(--bp-card, #fff) !important;
+        color: var(--bp-green, #009B3A) !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22),
+                    0 0 0 2px var(--bp-green, #009B3A) !important;
+        filter: brightness(1.04);
+    }
+    /* When .gs-panel is adopted into the drawer body, neutralise the
+       drawer-relative positioning + cap sizing so the tree fills the drawer. */
+    .rd-drawer__body .gs-panel {
+        position: static; bottom: auto; right: auto;
+        min-width: 0; max-width: none; width: 100%;
+        box-shadow: none;
+        border: none;
+    }
+    .rd-drawer__body .gs-panel .gs-header { display: none; } /* drawer header already provides title + close */
+    .rd-drawer__body #drawer-content-settings { display: block; }
+
+    /* Circular icon button — matches vai-toggle (44px vendor) and the
+       chip trio (40px tufte). SVG gear icon via currentColor; no glyph
+       font dependency (⚙ emoji rendered inconsistently across OSes). */
+    .gs-chip {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 40px; height: 40px; border-radius: 50%;
+        background: {{ _bg }}; color: {{ _txt }}; border: {{ _border }};
+        font-family: inherit; line-height: 1;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+        cursor: pointer; padding: 0;
+        transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
+    }
+    /* Vendor layouts (ai_agent_panel present) match the 44px Ask AI. */
+    body:has(.vai-toggle) .gs-chip { width: 44px; height: 44px; }
+    .gs-chip:hover {
+        filter: brightness(1.10);
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+    }
+    .gs-chip svg { display: block; width: 18px; height: 18px; }
+    /* Hide the text label spans — icon-only per user. */
+    .gs-chip .gs-chip-text { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    .gs-panel {
+        /* 2026-09-13 user revision · fully opaque. Earlier 75%→98% hover
+           pattern was too hard to read; the panel is small enough that
+           full opacity doesn't obscure the underlying theme. */
+        background: {{ _bg }}; border: {{ _border }};
+        border-radius: 10px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45),
+                    0 2px 6px rgba(0, 0, 0, 0.28),
+                    0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+        padding: 8px 12px 10px;
+        font-size: 0.65rem; color: {{ _txt }};
+        display: grid; grid-template-columns: auto 1fr; row-gap: 6px; column-gap: 10px;
+        align-items: center;
+        min-width: 260px; max-width: 340px;
+        opacity: 1;
+    }
+    .gs-panel .gs-header {
+        grid-column: 1 / -1;
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 2px;
+        font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em;
+        color: {{ _lbl }}; opacity: 0.7; font-weight: 700;
+    }
+    .gs-panel .gs-close {
+        background: none; border: none; color: {{ _txt }}; cursor: pointer;
+        font-size: 0.95rem; line-height: 1; padding: 0 2px; opacity: 0.7;
+    }
+    .gs-panel .gs-close:hover { opacity: 1; }
+    .gs-panel label {
+        color: {{ _lbl }}; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.04em; font-size: 0.56rem; opacity: 0.75;
+        text-align: right; padding-right: 2px;
+    }
+    .gs-panel select {
+        font-family: {{ _font }}; font-size: 0.72rem; padding: 3px 8px;
+        border: 1px solid rgba(255,255,255,0.45);
+        /* 2026-09-13 user revision · fully OPAQUE — rgba(white,0.45)
+           over the gradient rendered as washed lavender, unreadable
+           against white text. Solid dark purple gives crisp contrast
+           on any panel gradient. */
+        background: #241C4E; color: {{ _txt }};
+        border-radius: 4px; cursor: pointer; width: 100%;
+        transition: background 0.14s;
+    }
+    .gs-panel select:hover,
+    .gs-panel select:focus {
+        background: #382C77;
+        outline: none;
+    }
+    .gs-panel select option {
+        color: var(--bp-ink, #111); background: var(--bp-card, #fff);
+    }
+    .gs-panel .gs-sep {
+        grid-column: 1 / -1;
+        border-top: 1px solid rgba(255,255,255,0.15);
+        margin: 4px 0 2px;
+    }
+    /* 2026-09-06 user: 3-level collapsible Style tree replacing the flat
+       <select>. L1 = Light/Dark, L2 = Layout (Vendor vs Tufte), L3 = the
+       actual themes. Compact, scrollable, current theme highlighted. */
+    .gs-panel .gs-style-tree {
+        grid-column: 1 / -1;
+        max-height: 45vh; overflow-y: auto;
+        border: 1px solid rgba(255,255,255,0.28);
+        border-radius: 6px; padding: 4px;
+        /* 2026-09-13 user revision · fully OPAQUE inset well. */
+        background: #12102B;
+    }
+    .gs-panel .gs-style-tree details {
+        margin: 0; padding: 0;
+    }
+    .gs-panel .gs-style-tree summary {
+        cursor: pointer; padding: 4px 6px;
+        list-style: none;
+        font-size: 0.65rem; font-weight: 700;
+        color: {{ _lbl }}; text-transform: uppercase; letter-spacing: 0.04em;
+        border-radius: 4px;
+        display: flex; align-items: center; gap: 6px;
+        user-select: none;
+    }
+    .gs-panel .gs-style-tree summary::-webkit-details-marker { display: none; }
+    .gs-panel .gs-style-tree summary::before {
+        content: '▸'; font-size: 0.6rem; opacity: 0.7;
+        transition: transform 0.15s;
+    }
+    .gs-panel .gs-style-tree details[open] > summary::before {
+        transform: rotate(90deg);
+    }
+    .gs-panel .gs-style-tree summary:hover {
+        /* Fully opaque hover row against the inset well. */
+        background: #382C77;
+    }
+    .gs-panel .gs-style-tree .gs-branch {
+        margin-left: 12px; padding-left: 6px;
+        border-left: 1px solid rgba(255,255,255,0.10);
+    }
+    .gs-panel .gs-style-tree .gs-branch summary {
+        font-size: 0.6rem; opacity: 0.85;
+    }
+    .gs-panel .gs-style-tree .gs-count {
+        margin-left: auto; opacity: 0.55; font-weight: 400;
+        font-size: 0.55rem;
+    }
+    .gs-panel .gs-style-tree a.gs-style-opt {
+        display: block; padding: 3px 8px 3px 24px;
+        color: {{ _txt }}; text-decoration: none;
+        font-size: 0.68rem; border-radius: 3px; text-transform: none;
+        letter-spacing: 0; font-weight: 400;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .gs-panel .gs-style-tree a.gs-style-opt {
+        transition: background 0.12s;
+    }
+    .gs-panel .gs-style-tree a.gs-style-opt:hover {
+        background: #382C77;
+    }
+    .gs-panel .gs-style-tree a.gs-style-opt.active {
+        background: #5A4A9E;
+        font-weight: 600;
+    }
+    .gs-panel .gs-style-tree a.gs-style-opt.active:hover {
+        background: #6E5CB8;
+    }
+    .gs-panel .gs-apps {
+        grid-column: 1 / -1;
+        display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .gs-panel .gs-apps a {
+        color: {{ _txt }};
+        background: #241C4E;
+        border: 1px solid rgba(255,255,255,0.42);
+        border-radius: 4px; padding: 3px 8px;
+        text-decoration: none; font-size: 0.68rem; font-weight: 500;
+        transition: background 0.12s;
+    }
+    .gs-panel .gs-apps a:hover { background: #382C77; }
+
+    /* Hide entirely in boardroom mode (chip + panel both). */
+    body.boardroom-mode #globalSelectors { display: none; }
+</style>
+
+<div id="globalSelectors">
+    {# Collapsed pill — click to open the shared right-drawer (v2·1 phase 1c). #}
+    <button type="button" class="gs-chip" data-rd-trigger="settings" onclick="gsToggle()"
+            title="Settings — Style · Data · UI · Apps"
+            aria-label="Open settings panel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      <span class="gs-chip-text">Settings</span>
+    </button>
+</div>
+
+{# Nav v2·1 phase 1c · Settings panel content lives in a hoisted, hidden
+   marker div so window.RightDrawer.open('settings', …) can adopt it into
+   the shared drawer's body. Element IDs / event handlers below stay stable
+   so gsToggle keyboard shortcuts, theme picker links, and select handlers
+   keep working after adoption. Content returns here on drawer close. #}
+<div id="drawer-content-settings" data-drawer-content hidden>
+    <div class="gs-panel">
+        <div class="gs-header">
+            <span>Settings · Style / Data / UI / Apps</span>
+            <button type="button" class="gs-close" onclick="gsToggle()"
+                    title="Collapse (Alt-.)" aria-label="Collapse settings panel">&times;</button>
+        </div>
+
+        <label>Style</label>
+        {# 2026-09-06 user: 3-level collapsible tree (Light|Dark → Vendor|
+           Tufte → theme). Uses the server-side classification
+           (theme_classifications) computed from actual bg luminance +
+           _theme_layout() — NOT the naive name heuristic that
+           mis-labeled 57 themes as light-vs-dark and 15 themes as
+           vendor-vs-tufte. Base entries (default + board) hardcoded
+           since they're not in EPM_THEME_CONFIGS. #}
+        {% set _flat = [] %}
+        {% set _seen_names = [] %}
+        {% set _ = _flat.append(('default', 'Default (Tufte)', false, 'tufte')) %}
+        {% set _ = _seen_names.append('Default (Tufte)') %}
+        {# theme=board is dark (deep navy topbar), vendor layout (board-app grid). #}
+        {% set _ = _flat.append(('board', 'Board International', true, 'vendor')) %}
+        {% set _ = _seen_names.append('Board International') %}
+        {# 2026-09-12 user · "-tufte" suffixed themes are palette-clones of
+           their base theme with a serif font swap — the picker was showing
+           both which visually reads as duplicates. Suppress the -tufte
+           variant so each palette appears once; users needing the tufte
+           twin can pick it via /design/composer with the mode/layout
+           controls or the composer's font override.
+           2026-09-13 user · additionally dedupe by DISPLAY NAME — several
+           theme keys share identical names (halo-wipro vs
+           halo-wipro-intelligence-dark-system, wipro-daai-* pairs, etc.)
+           and were rendering as visually-identical duplicate rows. Keep
+           the first key encountered per name (EPM_THEME_CONFIGS is sorted
+           alphabetically upstream so the shorter/canonical key wins). #}
+        {% for _fam, _items in (theme_families | default({})).items() %}
+          {% for _k, _t in _items %}
+            {% if not _k.endswith('-tufte') %}
+              {% set _name = _t.name | default(_k) %}
+              {% if _name not in _seen_names %}
+                {# 2026-09-24 · classification is 3-tuple (body_mode, masthead_mode, layout).
+                   Picker bucketing uses body_mode. masthead_mode drives topbar logo selection
+                   elsewhere; not surfaced in the picker tree. See feedback_wipro_wordmark_on_wipro_themes.md. #}
+                {% set _cls = (theme_classifications or {}).get(_k, ('light', 'dark', 'vendor')) %}
+                {% set _dark = _cls[0] == 'dark' %}
+                {% set _lay = _cls[2] %}
+                {% set _ = _flat.append((_k, _name, _dark, _lay)) %}
+                {% set _ = _seen_names.append(_name) %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+        <div class="gs-style-tree">
+          {# 2026-09-06 user: "My Themes" section for tenant-saved themes
+             from /theme/ editor. Renders when the presenter has saved at
+             least one custom theme. Auto-opens when the currently-active
+             cookie matches a saved theme id. #}
+          {% if saved_themes %}
+          <details {% if active_tenant_theme_id %}open{% endif %}>
+            <summary>My Themes<span class="gs-count">{{ saved_themes | length }}</span></summary>
+            {% for _st in saved_themes %}
+            <a class="gs-style-opt {% if active_tenant_theme_id == _st.id %}active{% endif %}"
+               href="/theme/activate/{{ _st.id }}?redirect={{ request.url.path }}"
+               title="Saved {{ _st.created_at }} · id {{ _st.id[:8] }}…">
+              {{ _st.name }}
+            </a>
+            {% endfor %}
+            {% if active_tenant_theme_id %}
+            <a class="gs-style-opt"
+               href="/theme/clear?redirect={{ request.url.path }}"
+               style="color: var(--bp-negative, #c62828);"
+               title="Clear the tenant-theme cookie and fall back to the base palette.">
+              ✗ Clear active theme
+            </a>
+            {% endif %}
+            <a class="gs-style-opt"
+               href="/theme/"
+               style="color: var(--bp-accent, #1a5276); font-style: italic;"
+               title="Open the Live Theme Customizer to create a new tenant theme.">
+              + New from customizer
+            </a>
+          </details>
+          {% else %}
+          <details>
+            <summary>My Themes<span class="gs-count">0</span></summary>
+            <a class="gs-style-opt"
+               href="/theme/"
+               style="color: var(--bp-accent, #1a5276); font-style: italic;"
+               title="Open the Live Theme Customizer to create your first tenant theme.">
+              + Create from customizer
+            </a>
+          </details>
+          {% endif %}
+
+          {% for _mode in ['light', 'dark'] %}
+            {% set _mode_label = 'Light Themes' if _mode == 'light' else 'Dark Themes' %}
+            {% set _mode_items = [] %}
+            {% for _k, _n, _isdark, _lay in _flat %}
+              {% if (_mode == 'dark' and _isdark) or (_mode == 'light' and not _isdark) %}
+                {% set _ = _mode_items.append((_k, _n, _lay)) %}
+              {% endif %}
+            {% endfor %}
+            {% if _mode_items %}
+            <details {% if theme in _mode_items | map(attribute=0) or (_mode == 'light' and (not theme or theme == 'default')) %}open{% endif %}>
+              <summary>{{ _mode_label }}<span class="gs-count">{{ _mode_items | length }}</span></summary>
+              {% for _lay in ['tufte', 'vendor'] %}
+                {% set _lay_label = 'Tufte Layout' if _lay == 'tufte' else 'Vendor Layout' %}
+                {% set _lay_items = _mode_items | selectattr(2, 'equalto', _lay) | list %}
+                {% if _lay_items %}
+                <details class="gs-branch" {% if theme in _lay_items | map(attribute=0) %}open{% endif %}>
+                  <summary>{{ _lay_label }}<span class="gs-count">{{ _lay_items | length }}</span></summary>
+                  {% for _k, _n, _ in _lay_items %}
+                  <a class="gs-style-opt {% if theme == _k or (not theme and _k == 'default') %}active{% endif %}"
+                     href="/set-theme?theme={{ _k }}&redirect={{ request.url.path }}"
+                     title="{{ _n }}">{{ _n }}</a>
+                  {% endfor %}
+                </details>
+                {% endif %}
+              {% endfor %}
+            </details>
+            {% endif %}
+          {% endfor %}
+        </div>
+
+        <label for="gs-data">Data</label>
+        <select id="gs-data"
+                onchange="if(this.value)window.location='/set-backend?backend='+this.value+'&redirect={{ request.url.path }}'">
+            <option value="sqlite" {% if backend == 'sqlite' %}selected{% endif %}>Default (SQLite)</option>
+            <option value="snowflake" {% if backend == 'snowflake' %}selected{% endif %}>Snowflake</option>
+            <option value="databricks" {% if backend == 'databricks' %}selected{% endif %}>Databricks</option>
+        </select>
+
+        <label for="gs-ui">UI</label>
+        <select id="gs-ui"
+                onchange="var v=this.value;if(v=='htmx')window.location='/set-uitech?uitech=htmx&redirect=/?company={{ current_company }}';else if(v=='react')window.location='/spa/react/?company={{ current_company }}';else if(v=='angular')window.location='/spa/angular/?company={{ current_company }}';else if(v=='viz')window.location='/spa/viz/?company={{ current_company }}';">
+            <option value="htmx" {% if uitech == 'htmx' %}selected{% endif %}>Default (HTMX)</option>
+            <option value="react" {% if uitech == 'react' %}selected{% endif %}>React</option>
+            <option value="angular" {% if uitech == 'angular' %}selected{% endif %}>Angular</option>
+            <option value="viz" {% if uitech == 'viz' %}selected{% endif %}>Viz</option>
+        </select>
+
+        <div class="gs-sep"></div>
+        <label>Apps</label>
+        <div class="gs-apps">
+            <a href="https://noble-adaptation-production-e990.up.railway.app/tm1" target="_blank" rel="noopener"
+               title="TM1 Server (external)">TM1 ↗</a>
+            <a href="https://noble-adaptation-production-e990.up.railway.app/essbase" target="_blank" rel="noopener"
+               title="Essbase Server (external)">Essbase ↗</a>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    // Nav v2·1 phase 1c · gsToggle now drives the shared right-drawer
+    // (window.RightDrawer). Chip active state mirrored via #globalSelectors
+    // .rd-active class set from open/close callbacks. Alt-. keeps working.
+    // .gs-close inside .gs-panel still calls gsToggle(); when the drawer is
+    // open it closes it, mirroring the drawer's × button.
+    var el = document.getElementById('globalSelectors');
+    if (!el) return;
+    var DRAWER_ID = 'settings';
+    var TITLE = 'Settings · Style / Data / UI / Apps';
+
+    function fallbackAdopt() {
+        // Defensive: if RightDrawer somehow isn't loaded, just reveal the
+        // hidden marker div in place so the user can still access settings.
+        var src = document.getElementById('drawer-content-settings');
+        if (src) { src.hidden = !src.hidden; }
+    }
+
+    window.gsToggle = function () {
+        if (!window.RightDrawer) { fallbackAdopt(); return; }
+        if (window.RightDrawer.isOpen(DRAWER_ID)) {
+            window.RightDrawer.close(DRAWER_ID);
+            return;
+        }
+        window.RightDrawer.open(DRAWER_ID, {
+            title: TITLE,
+            onOpen:  function () { el.classList.add('rd-active'); },
+            onClose: function () { el.classList.remove('rd-active'); }
+        });
+    };
+
+    // Keyboard shortcut: Alt-. to toggle.
+    document.addEventListener('keydown', function (evt) {
+        if (evt.altKey && evt.key === '.') { evt.preventDefault(); window.gsToggle(); }
+    });
+})();
+</script>

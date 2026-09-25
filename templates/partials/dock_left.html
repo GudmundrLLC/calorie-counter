@@ -1,0 +1,248 @@
+{# Left-edge Tufte dock · 2026-09-24 · v2·3 phase 3c refactor.
+
+   The dock's icons are now driven by ``nav_slots.sidecar`` (populated by
+   nav_resolver.resolve_nav_slots · seeded by scripts/seed_nav_placement_
+   defaults.py). Per-key click/href wiring stays in the template — each
+   feature has an inherently different destination (⌘K palette vs
+   /review-queue page vs sidecar-apps menu vs voice nav). The resolver
+   controls WHAT appears + WHERE + IN WHAT ORDER; the template controls
+   WHAT-HAPPENS-ON-CLICK.
+
+   Fallback: if ``nav_slots.sidecar`` is empty (cold DB, resolver blip),
+   render the original hardcoded 6 icons so the dock stays functional.
+   That fallback matches the pre-v2·3 markup byte-for-byte.
+
+   Design source: navigation-v2-execution-plan-2026-09-24.html §III·v2·3.
+#}
+<style>
+  .dock-left { display: none; }
+  html[data-layout="tufte"] .dock-left {
+    display: flex;
+    position: fixed; left: 0; top: 3.2rem; bottom: 0;
+    width: 40px; flex-direction: column; gap: 12px;
+    padding: 12px 0; z-index: 9540;
+    background: color-mix(in srgb, var(--bp-surface, #faf8f2) 92%, transparent);
+    border-right: 1px solid var(--bp-rule, #c9c4b5);
+    transition: width 0.15s ease-out;
+    align-items: stretch;
+  }
+  html[data-layout="tufte"] .dock-left:hover { width: 180px; }
+  html[data-viewport="phone"] .dock-left { display: none; }
+
+  .dock-left a, .dock-left button {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 12px; height: 40px;
+    color: var(--bp-ink-mid, #444); text-decoration: none;
+    background: none; border: none; cursor: pointer;
+    font-family: inherit; font-size: 0.82rem;
+    white-space: nowrap; overflow: hidden;
+    border-left: 3px solid transparent;
+  }
+  .dock-left a:hover, .dock-left button:hover {
+    color: var(--bp-ink, #1a1a1a);
+    background: color-mix(in srgb, var(--bp-ink) 4%, transparent);
+    border-left-color: var(--bp-brand, #502379);
+  }
+  .dock-left .dock-label {
+    opacity: 0; transition: opacity 0.15s ease-out 0.05s;
+  }
+  html[data-layout="tufte"] .dock-left:hover .dock-label { opacity: 1; }
+  .dock-left .dock-icon { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 20px; }
+</style>
+
+<aside class="dock-left" role="navigation" aria-label="Quick access dock">
+  {% set _sidecar_rows = (nav_slots or {}).get('sidecar', []) %}
+  {% if _sidecar_rows %}
+    {# Resolver-driven rendering — nav_placement rows for slot='sidecar'.
+       Order + visibility controlled by nav_placement.slot_order + visible;
+       per-key onclick/href dispatch below. Unknown keys render as a plain
+       link to '#' with a title so the operator notices a stale row. #}
+    {% for _fr in _sidecar_rows %}
+      {% set _k = _fr.key %}
+      {% if _k == 'sidecar-apps' %}
+        <button type="button" class="dock-item" title="{{ _fr.label }}"
+                onclick="var t=document.getElementById('ecoScTrigger'); if(t){t.click();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">{{ _fr.label }}</span>
+        </button>
+      {% elif _k == 'search' %}
+        <button type="button" class="dock-item" title="Search (⌘K)"
+                onclick="if(window.cmdk){window.cmdk();}else if(window.__cmdkOpen){window.__cmdkOpen();}else{var e=new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true});document.dispatchEvent(e);}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Search · ⌘K</span>
+        </button>
+      {% elif _k == 'notifications' %}
+        <a class="dock-item" href="/review-queue" title="Review queue · flagged findings">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Review queue</span>
+        </a>
+      {% elif _k == 'voice' %}
+        <button type="button" class="dock-item" title="Voice navigation"
+                onclick="if(window.startVoiceNav){window.startVoiceNav();}else if(window.voiceNavToggle){window.voiceNavToggle();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Voice nav</span>
+        </button>
+      {% elif _k == 'presenter-notes' %}
+        <button type="button" class="dock-item" title="Presenter notes"
+                onclick="if(window.togglePresenter){window.togglePresenter();}else if(window.vpresToggle){window.vpresToggle();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Presenter notes</span>
+        </button>
+      {% elif _k == 'ai-copilot' %}
+        <button type="button" class="dock-item" title="AI Copilot"
+                onclick="if(window.RightDrawer){window.RightDrawer.open('ai-copilot',{title:'AI Copilot'});}else if(document.getElementById('bpdChatChip')){document.getElementById('bpdChatChip').click();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">AI Copilot</span>
+        </button>
+      {% elif _k == 'settings' %}
+        <button type="button" class="dock-item" title="Settings"
+                onclick="if(window.gsToggle){window.gsToggle();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Settings</span>
+        </button>
+      {% elif _k == 'notes' %}
+        <button type="button" class="dock-item" data-rd-trigger="notes" title="Notes"
+                onclick="if(window.openNotesDrawer){window.openNotesDrawer();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Notes</span>
+        </button>
+      {% elif _k == 'pipeline' %}
+        <button type="button" class="dock-item" data-rd-trigger="pipeline" title="Pipeline"
+                onclick="if(window.openPipelineDrawer){window.openPipelineDrawer();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Pipeline</span>
+        </button>
+      {% elif _k == 'family' %}
+        <button type="button" class="dock-item" data-rd-trigger="family" title="Family"
+                onclick="if(window.openFamilyDrawer){window.openFamilyDrawer();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Family</span>
+        </button>
+      {% elif _k == 'ideas' %}
+        <button type="button" class="dock-item" data-rd-trigger="ideas" title="Ideas"
+                onclick="if(window.openIdeasDrawer){window.openIdeasDrawer();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Ideas</span>
+        </button>
+      {% elif _k == 'kiosk' %}
+        <a class="dock-item" href="/kiosk/?company={{ current_company }}" title="Kiosk — auto-cycling demo">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Kiosk</span>
+        </a>
+      {% elif _k == 'record' %}
+        <button type="button" class="dock-item" title="Start / stop recording"
+                onclick="if(window.tbrToggleRecord){window.tbrToggleRecord();}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Record</span>
+        </button>
+      {% elif _k == 'share' %}
+        <button type="button" class="dock-item" title="Share view"
+                onclick="if(window.openShareDialog){window.openShareDialog();}else{navigator.clipboard&&navigator.clipboard.writeText(location.href);}">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Share</span>
+        </button>
+      {% elif _k == 'logout' %}
+        <a class="dock-item" href="/logout" title="Sign out">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">Sign out</span>
+        </a>
+      {% else %}
+        {# Unknown feature key in a placement row — render disabled so the
+           operator sees + can move it to a slot that's wired. Doesn't crash
+           the dock. #}
+        <a class="dock-item" href="#" title="Unwired feature: {{ _k }}" style="opacity:.5">
+          <span class="dock-icon">{% with name=_fr.icon, size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+          <span class="dock-label">{{ _fr.label }}</span>
+        </a>
+      {% endif %}
+    {% endfor %}
+    {# 2026-09-24 · Appendix items that aren't first-class nav_features
+       (yet). Rendered alongside the resolver rows so v2·3 preserves the
+       full pre-refactor dock: Review-queue (page shortcut, distinct from
+       the topbar bell chip which opens a drawer), Roadmap (design deep
+       link), Boardroom mode toggle (different from presenter-notes
+       drawer). Promote any of these to nav_features + a sidecar placement
+       row in a follow-on if they earn first-class status. #}
+    <a class="dock-item" href="/review-queue" title="Review queue · flagged findings">
+      <span class="dock-icon">{% with name='bell', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Review queue</span>
+    </a>
+    <a class="dock-item" href="/design/specimen" title="Design specimen · roadmap">
+      <span class="dock-icon">{% with name='map', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Roadmap</span>
+    </a>
+    <button type="button" class="dock-item" title="Presenter mode toggle"
+            onclick="if(window.toggleBoardroom){window.toggleBoardroom();}else{document.body.classList.toggle('boardroom-mode');}">
+      <span class="dock-icon">{% with name='play-circle', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Presenter mode</span>
+    </button>
+  {% else %}
+    {# Fallback — resolver returned nothing (cold DB, boot race, tests
+       without seed). Render the byte-for-byte pre-v2·3 dock so we never
+       ship an empty rail. #}
+    <button type="button" class="dock-item" title="Sidecar apps"
+            onclick="var t=document.getElementById('ecoScTrigger'); if(t){t.click();}">
+      <span class="dock-icon">{% with name='layout-grid', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Sidecar apps</span>
+    </button>
+    <button type="button" class="dock-item" title="Search (⌘K)"
+            onclick="if(window.cmdk){window.cmdk();}else if(window.__cmdkOpen){window.__cmdkOpen();}else{var e=new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true});document.dispatchEvent(e);}">
+      <span class="dock-icon">{% with name='search', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Search · ⌘K</span>
+    </button>
+    <a class="dock-item" href="/review-queue" title="Review queue · flagged findings">
+      <span class="dock-icon">{% with name='bell', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Review queue</span>
+    </a>
+    <a class="dock-item" href="/design/specimen" title="Design specimen · roadmap">
+      <span class="dock-icon">{% with name='map', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Roadmap</span>
+    </a>
+    <button type="button" class="dock-item" title="Presenter mode toggle"
+            onclick="if(window.toggleBoardroom){window.toggleBoardroom();}else{document.body.classList.toggle('boardroom-mode');}">
+      <span class="dock-icon">{% with name='play-circle', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Presenter mode</span>
+    </button>
+    <button type="button" class="dock-item" title="Voice navigation"
+            onclick="if(window.startVoiceNav){window.startVoiceNav();}else if(window.voiceNavToggle){window.voiceNavToggle();}">
+      <span class="dock-icon">{% with name='mic', size=20 %}{% include 'partials/icon.html' %}{% endwith %}</span>
+      <span class="dock-label">Voice nav</span>
+    </button>
+  {% endif %}
+</aside>
+
+<script>
+// Phase 2.5 · sidecar-app openers · notes / pipeline / family / ideas
+// promoted from v2·8's launcher into first-class left-sidecar chips.
+//
+// Preferred path: window.EcosystemBridge.openSidecar(...) — opens the
+// companion Railway app in an iframe drawer with proper origin/path
+// context (same behavior as the retired 🧩 launcher in sidecar_chips.html).
+// Fallback: RightDrawer.open() with placeholder body — used only if
+// EcosystemBridge hasn't loaded (defensive · lets the chip do SOMETHING
+// visible instead of silently failing).
+(function () {
+  ['notes', 'pipeline', 'family', 'ideas'].forEach(function (id) {
+    var fnKey = 'open' + id.charAt(0).toUpperCase() + id.slice(1) + 'Drawer';
+    window[fnKey] = window[fnKey] || function () {
+      if (window.EcosystemBridge && window.EcosystemBridge.openSidecar) {
+        window.EcosystemBridge.openSidecar({
+          app: id,
+          ctx: {
+            company: (document.querySelector('meta[name="bp-current-company"]') || {}).content || 'bp',
+            origin_app: 'bp-demo',
+            origin_path: window.location.pathname
+          }
+        });
+        return;
+      }
+      if (!window.RightDrawer) return;
+      if (window.RightDrawer.isOpen(id)) { window.RightDrawer.close(id); return; }
+      window.RightDrawer.open(id, {
+        title: id.charAt(0).toUpperCase() + id.slice(1),
+        statusChipsHtml: ''
+      });
+    };
+  });
+})();
+</script>

@@ -279,16 +279,24 @@
   }, true);
 
   // Outside-click → close top drawer only.
+  // Phase 2.5 hardening: existing chip triggers lack [data-rd-trigger]
+  // markers (togglePresenter, gsToggle, floating-chat chip) and would
+  // otherwise close the drawer they just opened when the click bubbled up.
+  // Belt-and-suspenders: also skip on chip-* class and hamburger overlay.
   document.addEventListener('click', function (e) {
     if (_stack.length === 0) return;
     var t = e.target; if (!t) return;
     // Ignore clicks inside any open drawer.
     if (t.closest && t.closest('.rd-drawer')) return;
     // Ignore clicks on a trigger that just opened us (data-rd-trigger="<id>").
-    var trg = t.closest && t.closest('[data-rd-trigger]');
-    if (trg) return;
+    if (t.closest && t.closest('[data-rd-trigger]')) return;
     // Ignore clicks on other explicit non-close surfaces.
     if (t.closest && t.closest('[data-rd-noclose]')) return;
+    // Ignore clicks on the hamburger menu (always on top per CAW spec).
+    if (t.closest && (t.closest('#hamburger-menu') || t.closest('.hamburger-menu'))) return;
+    // Ignore clicks on any element with a chip-* class — assumes chips
+    // are nav triggers that will open/toggle their own drawer.
+    if (t.closest && t.closest('[class*="chip-"]')) return;
     RightDrawer.closeTop();
   }, false);
 

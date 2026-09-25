@@ -1,0 +1,218 @@
+{# ── AI Copilot drawer header · nav v2·7 · S2 · 2026-09-25 ──────────────
+   Wires two 10-px subtle chips into the AI Copilot drawer's header slot
+   (before the ×) — reads existing endpoints:
+
+     GET /api/llm/last-call        → {provider, model, latency_ms, ts, fallback_from}
+     GET /api/assumptions/health   → {company, status:{coverage_pct,...}, records:[...]}
+
+   Chip 1 · LLM indicator     : provider + latency (e.g. "radium · 14.5s")
+   Chip 2 · Assumption health : mini status pill "coverage 87%"; click → /assumptions/analyze
+
+   Both chips are muted, 10 px, don't compete with the drawer title.
+   Auto-refresh every 30s while the drawer is open (stops on close).
+
+   Uses S1's hooks (v2·1) exposed by right_drawer.html:
+     window.RightDrawer.setStatusChips(id, html) — mutate header chips slot
+     data-rd-id="ai-copilot"                     — drawer id attribute
+
+   Attaches via MutationObserver on #rd-stack so all callers (dock_left,
+   ai_agent_panel, floating_chat.js) automatically get the chips without
+   modification. Idempotent: guards against double-registration.
+──────────────────────────────────────────────────────────────────────── #}
+<style>
+  /* Header chip cluster — flexbox tuned so title stays left-anchored and
+     chips flow between title and × close. Overrides only the ai-copilot
+     drawer via the [data-rd-id] attribute set by right_drawer.html. */
+  .rd-drawer[data-rd-id="ai-copilot"] .rd-drawer__chips {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 12px;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+    overflow: hidden;
+  }
+  .aic-hdr-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 6px;
+    font-size: 10px; line-height: 1;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--bp-mid, #7a7a7a);
+    background: color-mix(in srgb, var(--bp-ink, #111) 5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--bp-ink, #111) 8%, transparent);
+    border-radius: 2px;
+    text-decoration: none;
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .aic-hdr-chip:hover {
+    color: var(--bp-ink, #111);
+    background: color-mix(in srgb, var(--bp-brand, #502379) 8%, transparent);
+    border-color: color-mix(in srgb, var(--bp-brand, #502379) 20%, transparent);
+  }
+  a.aic-hdr-chip:hover { text-decoration: none; }
+  .aic-hdr-chip[data-loading="1"] { opacity: 0.55; }
+  .aic-hdr-chip[data-status="ok"]   { border-color: color-mix(in srgb, var(--bp-green, #009B3A) 30%, transparent); }
+  .aic-hdr-chip[data-status="warn"] { border-color: color-mix(in srgb, var(--bp-yellow, #E67E22) 40%, transparent); }
+  .aic-hdr-chip[data-status="err"]  { border-color: color-mix(in srgb, #d93a2b 40%, transparent); color: #a02418; }
+  .aic-hdr-chip .aic-hdr-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--bp-mid, #7a7a7a);
+    display: inline-block; flex-shrink: 0;
+  }
+  .aic-hdr-chip[data-status="ok"]   .aic-hdr-dot { background: var(--bp-green, #009B3A); }
+  .aic-hdr-chip[data-status="warn"] .aic-hdr-dot { background: var(--bp-yellow, #E67E22); }
+  .aic-hdr-chip[data-status="err"]  .aic-hdr-dot { background: #d93a2b; }
+</style>
+
+<script>
+(function(){
+  if (window.__aicHeaderInit) return;
+  window.__aicHeaderInit = true;
+
+  var DRAWER_ID = 'ai-copilot';
+  var POLL_MS = 30000;
+  var _poll = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function fmtLatency(ms) {
+    if (ms == null || isNaN(ms)) return '';
+    var n = Number(ms);
+    if (n < 1000) return n.toFixed(0) + 'ms';
+    return (n / 1000).toFixed(1) + 's';
+  }
+
+  function chipsHtml(llm, assump) {
+    // LLM chip
+    var llmStatus = 'ok';
+    var llmLabel  = 'llm · unknown';
+    if (!llm) {
+      llmStatus = 'warn'; llmLabel = 'llm · no data';
+    } else {
+      var lat = fmtLatency(llm.latency_ms);
+      var prov = llm.provider || 'unknown';
+      llmLabel = prov + (lat ? ' · ' + lat : '');
+      // Latency thresholds: <2s ok · <8s warn · else err. Fallback = warn.
+      if (llm.fallback_from) llmStatus = 'warn';
+      else if (llm.latency_ms == null) llmStatus = 'warn';
+      else if (llm.latency_ms >= 8000) llmStatus = 'err';
+      else if (llm.latency_ms >= 2000) llmStatus = 'warn';
+    }
+
+    // Assumption health chip
+    var aStatus = 'ok';
+    var aLabel  = 'assumptions';
+    if (!assump) {
+      aStatus = 'warn'; aLabel = 'assumptions · —';
+    } else {
+      var cov = null;
+      if (assump.status && typeof assump.status === 'object') {
+        cov = assump.status.coverage_pct != null ? assump.status.coverage_pct : assump.status.coverage;
+      }
+      if (assump.summary && cov == null && typeof assump.summary === 'object') {
+        cov = assump.summary.coverage_pct != null ? assump.summary.coverage_pct : assump.summary.coverage;
+      }
+      if (cov != null && !isNaN(cov)) {
+        var pct = (cov <= 1) ? Math.round(cov * 100) : Math.round(cov);
+        aLabel = 'assumptions · ' + pct + '%';
+        if (pct >= 75) aStatus = 'ok';
+        else if (pct >= 40) aStatus = 'warn';
+        else aStatus = 'err';
+      } else if (Array.isArray(assump.records) && assump.records.length > 0) {
+        aLabel = 'assumptions · ' + assump.records.length;
+      } else {
+        aStatus = 'warn'; aLabel = 'assumptions · empty';
+      }
+    }
+
+    return (
+      '<span class="aic-hdr-chip" data-status="' + llmStatus + '" title="LLM last call">' +
+        '<span class="aic-hdr-dot"></span>' + esc(llmLabel) +
+      '</span>' +
+      '<a class="aic-hdr-chip" data-status="' + aStatus + '" title="Assumption health · click for full report" ' +
+        'href="/assumptions">' +
+        '<span class="aic-hdr-dot"></span>' + esc(aLabel) +
+      '</a>'
+    );
+  }
+
+  function loadingHtml() {
+    return (
+      '<span class="aic-hdr-chip" data-loading="1"><span class="aic-hdr-dot"></span>llm · …</span>' +
+      '<span class="aic-hdr-chip" data-loading="1"><span class="aic-hdr-dot"></span>assumptions · …</span>'
+    );
+  }
+
+  function refresh() {
+    if (!window.RightDrawer || !window.RightDrawer.isOpen(DRAWER_ID)) return;
+    Promise.all([
+      fetch('/api/llm/last-call', {credentials:'same-origin'}).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+      fetch('/api/assumptions/health', {credentials:'same-origin'}).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+    ]).then(function(pair){
+      if (!window.RightDrawer.isOpen(DRAWER_ID)) return;
+      window.RightDrawer.setStatusChips(DRAWER_ID, chipsHtml(pair[0], pair[1]));
+    });
+  }
+
+  function startPolling() {
+    stopPolling();
+    // Show a loading placeholder immediately so the header slot doesn't
+    // flash empty on drawer-open.
+    if (window.RightDrawer && window.RightDrawer.isOpen(DRAWER_ID)) {
+      try { window.RightDrawer.setStatusChips(DRAWER_ID, loadingHtml()); } catch(e){}
+    }
+    refresh();
+    _poll = setInterval(refresh, POLL_MS);
+  }
+  function stopPolling() {
+    if (_poll) { clearInterval(_poll); _poll = null; }
+  }
+
+  // Attach via MutationObserver on the #rd-stack container so every caller
+  // that opens ai-copilot (dock_left · ai_agent_panel · floating_chat.js)
+  // gets the chips without needing to pass statusChipsHtml itself.
+  function attach() {
+    var stack = document.getElementById('rd-stack');
+    if (!stack) return false;
+    var mo = new MutationObserver(function(muts){
+      var opened = false, closed = false;
+      muts.forEach(function(m){
+        m.addedNodes && m.addedNodes.forEach(function(n){
+          if (n.nodeType === 1 && n.getAttribute && n.getAttribute('data-rd-id') === DRAWER_ID) opened = true;
+        });
+        m.removedNodes && m.removedNodes.forEach(function(n){
+          if (n.nodeType === 1 && n.getAttribute && n.getAttribute('data-rd-id') === DRAWER_ID) closed = true;
+        });
+      });
+      if (opened) startPolling();
+      else if (closed) stopPolling();
+    });
+    mo.observe(stack, { childList: true });
+    // If drawer is already open when this partial loads (unlikely — this
+    // partial ships in <body> before drawers open — but guard anyway).
+    if (window.RightDrawer && window.RightDrawer.isOpen(DRAWER_ID)) startPolling();
+    return true;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    // #rd-stack may not exist yet if right_drawer partial is included later
+    // — retry once after a tick.
+    if (!attach()) setTimeout(attach, 50);
+  }
+
+  // Expose for future callers who want to pass initial chips explicitly.
+  window.AICopilotHeader = {
+    chipsHtml: chipsHtml,
+    loadingHtml: loadingHtml,
+    refresh: refresh,
+  };
+})();
+</script>

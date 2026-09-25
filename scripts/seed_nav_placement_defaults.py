@@ -53,28 +53,41 @@ from nav_features import NAV_FEATURES  # noqa: E402
 # When adding a NEW feature: add it to nav_features.py + one row here.
 BASELINE: list[tuple[str, str, int, int]] = [
     # (feature_key, slot, slot_order, visible)
-    # ── Topbar action rail (right-hand cluster) ──────────────────────
-    ("hamburger",       "topbar",           10, 1),  # locked · always leftmost
-    ("help",            "topbar",           20, 1),  # locked · always second
-    ("walkthroughs",    "topbar",           30, 1),
-    ("capture-note",    "topbar",           40, 1),
-    ("flag-page",       "topbar",           50, 1),
-    ("presenter-notes", "topbar",           60, 1),
-    ("ai-walkthrough",  "topbar",           70, 1),
+    # ── Topbar action rail (CAW spec left→right · Phase 2.5) ─────────
+    # Center cluster (left of chrome): capture-note · FLAG · presenter · walkthrough-coach
+    ("capture-note",    "topbar",           10, 1),
+    ("flag-page",       "topbar",           20, 1),
+    ("presenter-notes", "topbar",           30, 1),
+    ("ai-walkthrough",  "topbar",           40, 1),
+    ("walkthroughs",    "topbar",           50, 1),
+    ("notifications",   "topbar",           60, 1),
+    # Right cluster (far right, next to help): ai-copilot · settings · help · hamburger
     ("ai-copilot",      "topbar",           80, 1),
-    ("notifications",   "topbar",           90, 1),
-    ("settings",        "topbar",          100, 1),
+    ("settings",        "topbar",           90, 1),
+    ("help",            "topbar",          100, 1),  # locked visible
+    ("hamburger",       "topbar",          110, 1),  # locked visible
     # ── Topbar overflow (⋯ dropdown) ─────────────────────────────────
-    ("share",           "topbar:overflow",  10, 1),
-    ("boardroom",       "topbar:overflow",  20, 1),
-    ("kiosk",           "topbar:overflow",  30, 1),
-    ("record",          "topbar:overflow",  40, 1),
-    # ── Left sidecar rail ────────────────────────────────────────────
-    ("sidecar-apps",    "sidecar",          10, 1),
-    ("search",          "sidecar",          20, 1),
-    ("voice",           "sidecar",          30, 1),
-    # ── Hamburger actions ────────────────────────────────────────────
-    ("logout",          "hamburger:actions", 10, 1),
+    ("boardroom",       "topbar:overflow",  10, 1),
+    # ── Left sidecar rail (CAW spec Phase 2.5) ───────────────────────
+    # Personal sidecar-apps promoted from launcher (v2·8 · sidecar-apps.visible=0)
+    ("notes",           "sidecar",          10, 1),
+    ("pipeline",        "sidecar",          20, 1),
+    ("family",          "sidecar",          30, 1),
+    ("ideas",           "sidecar",          40, 1),
+    # Sidecar action icons per CAW (kiosk / record / voice / share group)
+    ("kiosk",           "sidecar",          50, 1),
+    ("record",          "sidecar",          60, 1),
+    ("voice",           "sidecar",          70, 1),
+    ("share",           "sidecar",          80, 1),
+    # Search + logout anchor the ends
+    ("search",          "sidecar",           5, 1),  # first · top of rail
+    ("sidecar-apps",    "sidecar",          90, 0),  # kept for admin re-enable · hidden by v2·8
+    ("logout",          "sidecar",         100, 1),  # last · bottom of rail
+    # ── AI Copilot drawer header chips (LLM + assumption · v2·7) ─────
+    ("llm-indicator",     "drawer-header:ai-copilot", 10, 1),
+    ("assumption-health", "drawer-header:ai-copilot", 20, 1),
+    # ── Hamburger actions (retained as fallback surface) ─────────────
+    # (logout also lives here for hamburger presentation · dual placement OK)
 ]
 
 
