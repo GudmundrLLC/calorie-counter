@@ -74,6 +74,9 @@ tr:nth-child(even){background:var(--cream)}
     <link rel="stylesheet" href="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-sidecar.css?v=2">
 </head>
 <body>
+{# Nav v2 · shared drawer + chip primitives (S2 · Phase 3 · additive · report page skips visible chip strip — print target) #}
+{% include 'partials/right_drawer.html' ignore missing %}
+{% include 'partials/chip_note.html' ignore missing %}
 
 <div class="print-bar">
   <span>Nutrition & Blood Sugar Report &middot; Use Letter (8.5&times;11) &middot; Background graphics: On</span>

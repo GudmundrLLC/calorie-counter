@@ -192,12 +192,17 @@ select{font-family:'Libre Baskerville',Georgia,serif;font-size:0.8rem;padding:0.
     <link rel="stylesheet" href="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-sidecar.css?v=2">
 </head>
 <body>
+{# Nav v2 · shared drawer + chip primitives (S2 · Phase 3 · additive) #}
+{% include 'partials/right_drawer.html' ignore missing %}
+{% include 'partials/chip_note.html' ignore missing %}
 <div class="app">
 
   <header class="masthead">
     <div class="mh-left">
       <h1>Calorie & Blood Sugar Tracker</h1>
-      <p class="subtitle">Track what you eat. Know what you need.</p>
+      <p class="subtitle">Track what you eat. Know what you need.
+        {% include 'partials/nav_v2_chips.html' ignore missing %}
+      </p>
     </div>
     <div class="hamburger" id="mainMenu">
       <button class="hamburger-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mainMenuPanel" onclick="toggleMenu(event)">

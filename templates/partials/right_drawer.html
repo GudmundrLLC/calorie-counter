@@ -1,0 +1,310 @@
+{# ── Right-drawer nest · v2·1 phase 1a-1b · 2026-09-24 ─────────────────
+   Canonical stacking right-drawer used by Settings, AI Copilot, Presenter
+   Notes, and any future drawer feature. Design source of truth:
+   AIGenerate_HTML/HTMLFiles/2. Concepts/BP-Demo-Audit/
+   navigation-v2-execution-plan-2026-09-24.html §III·v2·1 (phases 1a-1b).
+
+   Behaviour (locked spec)
+   ─────────────────────
+   · Anchored top-right of the viewport.
+   · Stacking: layer 0 at top:0 / right:0 · every subsequent open drawer
+     nudges +8px down + +8px LEFT (`right` value grows) so each drawer
+     peeks 8px past the one covering it. Newest on top.
+   · Z-index: 8000 base + 100 per layer (settings=8000, ai=8100, presenter=
+     8200, next open goes on top). Hamburger + modal escape hatches stay
+     above at ≥9000.
+   · Esc closes the TOP drawer only (never all at once).
+   · Outside-click closes the TOP drawer only (click inside any open
+     drawer never propagates a close).
+   · Every drawer carries its own X in the header.
+   · Header: [title] [status chips slot] [×].
+   · Body: adopts the DOM subtree that lives in
+     `<div id="drawer-content-<id>" data-drawer-content hidden>…</div>`
+     so migrated panels keep their original element IDs (scripts still
+     work). Content returns home on close.
+   · Reduced-motion respected via prefers-reduced-motion.
+   · Included ONCE (near end of base.html). Idempotent — guards prevent
+     double-registration if pulled in twice.
+
+   JS API (window.RightDrawer)
+   ──────────────────────────
+     RightDrawer.open(id, { title, statusChipsHtml, onOpen, onClose })
+     RightDrawer.close(id)                     // close a specific drawer
+     RightDrawer.closeTop()                    // close whichever is on top
+     RightDrawer.isOpen(id) → bool
+     RightDrawer.stack() → [id, …]             // bottom-first
+──────────────────────────────────────────────────────────────────────── #}
+<style>
+  /* Container that owns every open drawer. Sits above ordinary chrome
+     but below full-page modals and the loading curtain. */
+  #rd-stack {
+    position: fixed; inset: 0; pointer-events: none;
+    z-index: 8000;
+  }
+  .rd-drawer {
+    pointer-events: auto;
+    position: fixed;
+    top: 0; right: 0;
+    width: min(480px, 92vw);
+    height: 100vh; max-height: 100vh;
+    background: var(--bp-card, var(--bp-surface, #fff));
+    color: var(--bp-ink, #1a1a1a);
+    border-left: 1px solid var(--bp-rule, #c9c4b5);
+    box-shadow: -12px 0 30px rgba(0,0,0,0.22);
+    display: flex; flex-direction: column;
+    font-family: 'EB Garamond', Georgia, serif;
+    transform: translateX(100%);
+    opacity: 0;
+    transition: transform 0.28s cubic-bezier(0.2,0.7,0.3,1),
+                opacity 0.22s ease-out,
+                top 0.14s ease-out, right 0.14s ease-out;
+  }
+  .rd-drawer.is-open {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rd-drawer { transition: opacity 0.1s linear; transform: none; }
+    .rd-drawer.is-open { transform: none; }
+  }
+
+  /* Stacking offsets. Layer 0 flush right; each subsequent layer nudged
+     +8px down and +8px inward from the right edge so the layer beneath
+     peeks past the top-right corner and stays clickable. */
+  .rd-drawer[data-rd-layer="0"] { top: 0;   right: 0;   z-index: 8000; }
+  .rd-drawer[data-rd-layer="1"] { top: 8px;  right: 8px;  z-index: 8100; }
+  .rd-drawer[data-rd-layer="2"] { top: 16px; right: 16px; z-index: 8200; }
+  .rd-drawer[data-rd-layer="3"] { top: 24px; right: 24px; z-index: 8300; }
+  .rd-drawer[data-rd-layer="4"] { top: 32px; right: 32px; z-index: 8400; }
+
+  .rd-drawer__header {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    background: var(--bp-surface-alt, var(--bp-cream, #f7f5ef));
+    border-bottom: 1px solid var(--bp-rule, #e4e4e4);
+    font-family: 'Libre Baskerville', Georgia, serif;
+  }
+  .rd-drawer__title {
+    flex: 1 1 auto;
+    font-size: 0.92rem; font-weight: 700; color: var(--bp-ink, #1a1a1a);
+    letter-spacing: 0.2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rd-drawer__chips {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: 0.72rem; color: var(--bp-mid, #666);
+  }
+  .rd-drawer__chips:empty { display: none; }
+  .rd-drawer__close {
+    flex: 0 0 auto;
+    background: none; border: none; cursor: pointer;
+    font-size: 1.4rem; line-height: 1;
+    color: var(--bp-mid, #666);
+    padding: 2px 6px; border-radius: 3px;
+    font-family: inherit;
+  }
+  .rd-drawer__close:hover { color: var(--bp-red, #b91c1c); background: color-mix(in srgb, var(--bp-ink,#1a1a1a) 6%, transparent); }
+  .rd-drawer__close:focus-visible { outline: 2px solid var(--bp-brand, #502379); outline-offset: 1px; }
+
+  .rd-drawer__body {
+    flex: 1 1 auto; overflow: auto;
+    padding: 12px 14px;
+    background: var(--bp-card, var(--bp-surface, #fff));
+    color: inherit;
+  }
+
+  /* Phone / narrow — drop offsets so the bottom drawer stays fully
+     reachable; stack visually via z-index only. */
+  html[data-viewport="phone"] .rd-drawer,
+  @media (max-width: 640px) {
+    .rd-drawer { width: 100vw; border-left: none; }
+    .rd-drawer[data-rd-layer] { top: 0; right: 0; }
+  }
+</style>
+
+<div id="rd-stack" aria-hidden="false"></div>
+
+<template id="rd-drawer-template">
+  <div class="rd-drawer" role="dialog" aria-modal="false" data-rd-layer="0">
+    <header class="rd-drawer__header">
+      <div class="rd-drawer__title"></div>
+      <div class="rd-drawer__chips"></div>
+      <button type="button" class="rd-drawer__close" aria-label="Close drawer">&times;</button>
+    </header>
+    <div class="rd-drawer__body"></div>
+  </div>
+</template>
+
+<script>
+(function () {
+  if (window.RightDrawer) return; // idempotent · partial included twice would double-register
+
+  var STACK_ROOT_ID = 'rd-stack';
+  var TEMPLATE_ID   = 'rd-drawer-template';
+  var CONTENT_PREFIX = 'drawer-content-'; // migrated panels wrap their body in <div id="drawer-content-<id>">
+  var HOME_ATTR = 'data-rd-home-parent';  // hidden marker so body returns to original DOM slot on close
+  var _stack = [];                        // ordered bottom→top array of drawer ids
+  var _drawers = {};                      // id → { root, body, title, chips, close, cfg, origParent, origNext }
+
+  function stackRoot() { return document.getElementById(STACK_ROOT_ID); }
+
+  function relayer() {
+    _stack.forEach(function (id, idx) {
+      var d = _drawers[id];
+      if (!d) return;
+      d.root.setAttribute('data-rd-layer', String(idx));
+    });
+  }
+
+  function claimContent(id, body) {
+    var src = document.getElementById(CONTENT_PREFIX + id);
+    if (!src) return { origParent: null, origNext: null };
+    // Remember where it lives so we can return it on close.
+    var origParent = src.parentNode;
+    var origNext = src.nextSibling;
+    // Reveal + move.
+    src.hidden = false;
+    src.setAttribute(HOME_ATTR, '1');
+    body.appendChild(src);
+    return { origParent: origParent, origNext: origNext };
+  }
+  function returnContent(id, drawer) {
+    var src = document.getElementById(CONTENT_PREFIX + id);
+    if (!src) return;
+    if (drawer.origParent) {
+      drawer.origParent.insertBefore(src, drawer.origNext || null);
+    }
+    src.hidden = true;
+    src.removeAttribute(HOME_ATTR);
+  }
+
+  function buildDrawer(id, cfg) {
+    var tpl = document.getElementById(TEMPLATE_ID);
+    if (!tpl || !('content' in tpl)) return null;
+    var frag = tpl.content.cloneNode(true);
+    var root = frag.querySelector('.rd-drawer');
+    root.id = 'rd-drawer-' + id;
+    root.setAttribute('data-rd-id', id);
+    var titleEl = root.querySelector('.rd-drawer__title');
+    var chipsEl = root.querySelector('.rd-drawer__chips');
+    var bodyEl  = root.querySelector('.rd-drawer__body');
+    var closeEl = root.querySelector('.rd-drawer__close');
+    titleEl.textContent = cfg.title || id;
+    root.setAttribute('aria-label', cfg.title || id);
+    if (cfg.statusChipsHtml) chipsEl.innerHTML = cfg.statusChipsHtml;
+    closeEl.addEventListener('click', function (e) { e.stopPropagation(); RightDrawer.close(id); });
+    return { root: root, body: bodyEl, title: titleEl, chips: chipsEl, close: closeEl };
+  }
+
+  function ensureStackRoot() {
+    var root = stackRoot();
+    if (root) return root;
+    // If the partial is somehow late-loaded, create the container.
+    root = document.createElement('div');
+    root.id = STACK_ROOT_ID;
+    document.body.appendChild(root);
+    return root;
+  }
+
+  window.RightDrawer = {
+    open: function (id, cfg) {
+      cfg = cfg || {};
+      if (_drawers[id]) {
+        // Already open · promote to top.
+        var pos = _stack.indexOf(id);
+        if (pos !== -1) { _stack.splice(pos, 1); _stack.push(id); relayer(); }
+        return _drawers[id].root;
+      }
+      var built = buildDrawer(id, cfg);
+      if (!built) return null;
+      var root = ensureStackRoot();
+      root.appendChild(built.root);
+      var homed = claimContent(id, built.body);
+      _drawers[id] = {
+        root: built.root, body: built.body, title: built.title,
+        chips: built.chips, close: built.close, cfg: cfg,
+        origParent: homed.origParent, origNext: homed.origNext
+      };
+      _stack.push(id);
+      relayer();
+      // Trigger transition on next frame.
+      requestAnimationFrame(function () { built.root.classList.add('is-open'); });
+      if (typeof cfg.onOpen === 'function') { try { cfg.onOpen(built.root); } catch (e) {} }
+      document.body.classList.add('rd-any-open');
+      return built.root;
+    },
+    close: function (id) {
+      var d = _drawers[id]; if (!d) return;
+      var pos = _stack.indexOf(id);
+      if (pos !== -1) _stack.splice(pos, 1);
+      d.root.classList.remove('is-open');
+      // Return content to home BEFORE removing the drawer so DOM references stay valid.
+      returnContent(id, d);
+      var toRemove = d.root;
+      var cfgOnClose = d.cfg && d.cfg.onClose;
+      delete _drawers[id];
+      relayer();
+      setTimeout(function () {
+        if (toRemove && toRemove.parentNode) toRemove.parentNode.removeChild(toRemove);
+      }, 320);
+      if (typeof cfgOnClose === 'function') { try { cfgOnClose(); } catch (e) {} }
+      if (_stack.length === 0) document.body.classList.remove('rd-any-open');
+    },
+    closeTop: function () {
+      if (_stack.length === 0) return;
+      RightDrawer.close(_stack[_stack.length - 1]);
+    },
+    isOpen: function (id) { return !!_drawers[id]; },
+    stack: function () { return _stack.slice(); },
+    /** Update the header chips slot of an already-open drawer (used by v2·7 AI Copilot). */
+    setStatusChips: function (id, html) {
+      var d = _drawers[id]; if (!d) return;
+      d.chips.innerHTML = html || '';
+    }
+  };
+
+  // Esc → close top drawer only.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (_stack.length === 0) return;
+    // Don't steal Esc from an inner overlay (e.g. cmdk palette) — check if focus
+    // is inside an element that owns Escape (data-owns-escape).
+    var t = e.target;
+    if (t && t.closest && t.closest('[data-owns-escape]')) return;
+    e.stopPropagation();
+    RightDrawer.closeTop();
+  }, true);
+
+  // Outside-click → close top drawer only.
+  document.addEventListener('click', function (e) {
+    if (_stack.length === 0) return;
+    var t = e.target; if (!t) return;
+    // Ignore clicks inside any open drawer.
+    if (t.closest && t.closest('.rd-drawer')) return;
+    // Ignore clicks on a trigger that just opened us (data-rd-trigger="<id>").
+    var trg = t.closest && t.closest('[data-rd-trigger]');
+    if (trg) return;
+    // Ignore clicks on other explicit non-close surfaces.
+    if (t.closest && t.closest('[data-rd-noclose]')) return;
+    RightDrawer.closeTop();
+  }, false);
+
+  // Optional data-attribute wiring for buttons.
+  //   <button data-rd-trigger="settings" data-rd-title="Settings">Settings</button>
+  document.addEventListener('click', function (e) {
+    var trg = e.target && e.target.closest && e.target.closest('[data-rd-trigger]');
+    if (!trg) return;
+    var id = trg.getAttribute('data-rd-trigger');
+    if (!id) return;
+    e.preventDefault();
+    if (RightDrawer.isOpen(id)) { RightDrawer.close(id); return; }
+    RightDrawer.open(id, {
+      title: trg.getAttribute('data-rd-title') || id,
+      statusChipsHtml: trg.getAttribute('data-rd-chips-html') || ''
+    });
+  }, false);
+})();
+</script>

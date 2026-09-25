@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+{# base_sidecar_slave.html · nav v2·4 · Layer 3 · S2 · 2026-09-25
+   Slim base for pages served under ?sidecar=1 (opened as a slave inside a
+   master app's sidecar iframe). NO topbar / rail / hamburger DOM — the
+   master's chrome is the sole navigation shell. Keeps right_drawer +
+   chip_note primitives (a slave may still stack drawers over its own body).
+   Chrome-hide backed by html[data-sidecar-slave="1"] (belt + suspenders
+   with static/ecosystem-sidecar.css, which handles the CSS-only path when
+   the parent iframes a full base.html page). #}
+<html lang="en"
+      data-theme="{% if theme == 'dark' %}board-dark{% elif theme == 'light' %}board-light{% else %}{{ theme|default('') }}{% endif %}"
+      data-layout="{{ theme_layout|default('tufte') }}"
+      data-sidecar-slave="1">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="csrf-token" content="{{ csrf_token|default('') }}">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=2">
+    <link rel="stylesheet" href="/static/design-layers.css">
+    <link rel="stylesheet" href="/static/themes.css">
+    <link rel="stylesheet" href="/static/epm-themes.css">
+    <link rel="stylesheet" href="/static/paradigm.css">
+    <link rel="stylesheet" href="/static/brand-themes.css">
+    <link rel="stylesheet" href="/static/brand-themes-partners.css">
+    <link rel="stylesheet" href="/static/ecosystem-sidecar.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=EB+Garamond:wght@400;500;600&family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+    <title>{% block title %}Slave · Integrated Planning{% endblock %}</title>
+    <style>
+      /* Chrome-hide: no topbar / rail / hamburger DOM should ever render in
+         this template, but defence-in-depth for any partial that slips in
+         via a screen-specific include we didn't anticipate. */
+      html[data-sidecar-slave="1"] .topbar,
+      html[data-sidecar-slave="1"] .dock-left,
+      html[data-sidecar-slave="1"] .dock-vendor,
+      html[data-sidecar-slave="1"] .htmx-hamburger-dropdown,
+      html[data-sidecar-slave="1"] #htmxHamburger,
+      html[data-sidecar-slave="1"] footer[role="contentinfo"],
+      html[data-sidecar-slave="1"] .site-footer { display: none !important; }
+
+      html[data-sidecar-slave="1"] body {
+        margin: 0; padding: 0;
+        background: var(--bp-surface, #fff);
+        color: var(--bp-ink, #1a1a1a);
+        font-family: 'EB Garamond', Georgia, serif;
+      }
+
+      /* Slave close chip — top-right anchored, above the drawer stack. */
+      .slave-close-chip {
+        position: fixed; top: 8px; right: 8px; z-index: 9500;
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 26px; height: 26px; padding: 0;
+        border: 1px solid rgba(0,0,0,0.12);
+        background: rgba(255,255,255,0.92);
+        color: #333; cursor: pointer;
+        font-size: 14px; line-height: 1;
+        border-radius: 0; /* per Designit — hairline square */
+        box-shadow: none;
+        transition: background 120ms ease, color 120ms ease;
+      }
+      .slave-close-chip:hover { background: #f2f2f2; color: #000; }
+      .slave-close-chip:focus-visible {
+        outline: 2px solid var(--bp-brand, #502379); outline-offset: 2px;
+      }
+      [data-theme="board-dark"] .slave-close-chip {
+        background: rgba(30,30,40,0.92); color: #d0d0e0;
+        border-color: rgba(255,255,255,0.14);
+      }
+      [data-theme="board-dark"] .slave-close-chip:hover {
+        background: rgba(60,60,80,0.95); color: #fff;
+      }
+
+      /* Content area — edge-to-edge inside the drawer, but with a small
+         top offset so the close chip doesn't overlap first-line copy. */
+      .slave-content { padding: 40px 16px 16px; }
+    </style>
+    {% block head %}{% endblock %}
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script>
+      window.ECO_APP_URL = {{ eco_app_url|default({})|tojson|safe }};
+    </script>
+    <script src="/static/ecosystem-bridge.js?v=2"></script>
+</head>
+<body data-paradigm="story" data-screen="{{ current_screen or '' }}">
+    {# Nav v2·1 drawer primitive · slave may still stack drawers over its
+       own body (e.g. AI Copilot chip). Same include as base.html so
+       window.RightDrawer is defined for any screen that opens a drawer. #}
+    {% include "partials/right_drawer.html" ignore missing %}
+    {% include "partials/chip_note.html" ignore missing %}
+
+    <button type="button" class="slave-close-chip"
+            aria-label="Close sidecar"
+            title="Close sidecar (Esc)"
+            onclick="(function(){ try { if (window.parent && window.parent !== window) { window.parent.postMessage({type:'eco:close-sidecar', from: location.pathname}, '*'); } } catch(_){ } })();">&times;</button>
+
+    <main id="main-content" class="slave-content" tabindex="-1">
+      {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+
+    <script>
+      /* Esc → post close-sidecar to parent (mirrors chip click). Only fires
+         when no other Esc-consumer (drawer, modal) intercepted first. */
+      document.addEventListener('keydown', function(e){
+        if (e.key !== 'Escape') return;
+        if (e.defaultPrevented) return;
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({type:'eco:close-sidecar', from: location.pathname}, '*');
+          }
+        } catch(_){}
+      });
+    </script>
+</body>
+</html>

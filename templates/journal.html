@@ -72,11 +72,16 @@ body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--
     <link rel="stylesheet" href="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-sidecar.css?v=2">
 </head>
 <body>
+{# Nav v2 · shared drawer + chip primitives (S2 · Phase 3 · additive) #}
+{% include 'partials/right_drawer.html' ignore missing %}
+{% include 'partials/chip_note.html' ignore missing %}
 <main class="app">
   <header class="masthead">
     <div>
       <h1>Journal</h1>
-      <p class="subtitle">Imported from Family Alignment.</p>
+      <p class="subtitle">Imported from Family Alignment.
+        {% include 'partials/nav_v2_chips.html' ignore missing %}
+      </p>
     </div>
     <div class="hamburger" id="mainMenu">
       <button class="hamburger-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mainMenuPanel" onclick="toggleMenu(event)">

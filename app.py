@@ -20,6 +20,15 @@ import uvicorn
 
 from auth import oauth, setup_oauth, is_oauth_configured, BASE_URL
 
+# Nav v2 · Phase 3 · S2 · 2026-09-25 — import-time side effect runs
+# migration + baseline seed on cold boot (mirrors bp-demo pattern).
+import nav_bootstrap  # noqa: F401
+try:
+    from nav_resolver import slots_for_request
+except Exception as _nav_e:
+    slots_for_request = None
+    print(f"[nav-v2] slots_for_request import FAILED: {type(_nav_e).__name__}: {_nav_e}", flush=True)
+
 
 # ── Config ──────────────────────────────────────────────────────────────
 
@@ -48,6 +57,33 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 _jinja = Environment(loader=FileSystemLoader(str(APP_DIR / "templates")), autoescape=True)
+
+
+# Nav v2 · Phase 3 · S2 helpers ─────────────────────────────────────────
+
+def _pick_template(request: Request, default_name: str) -> str:
+    """Nav v2·4/5 · route base template by ?embed=1 / ?sidecar=1.
+    Precedence: embed > sidecar > default. Callers pick their own default."""
+    qp = request.query_params
+    if qp.get("embed") == "1":
+        return "base_embed.html"
+    if qp.get("sidecar") == "1":
+        return "base_sidecar_slave.html"
+    return default_name
+
+
+def _nav_ctx(request: Request) -> dict:
+    """Return the nav v2 context slice (nav_slots + _base_template).
+    Merge into every render(). Fail-safe: empty dict on resolver failure."""
+    try:
+        nav_slots = slots_for_request(request) if slots_for_request else {}
+    except Exception as _e:
+        print(f"[nav-v2] slots_for_request FAILED: {type(_e).__name__}: {_e}", flush=True)
+        nav_slots = {}
+    return {
+        "nav_slots": nav_slots,
+        "_base_template": _pick_template(request, "base.html"),
+    }
 
 
 # ── Auth helpers ────────────────────────────────────────────────────────
@@ -557,8 +593,8 @@ async def login_page(request: Request):
     if user:
         return RedirectResponse("/", status_code=303)
     error = request.query_params.get("error", "")
-    tpl = _jinja.get_template("login.html")
-    return HTMLResponse(tpl.render(error=error, oauth_configured=is_oauth_configured()))
+    tpl = _jinja.get_template(_pick_template(request, "login.html"))
+    return HTMLResponse(tpl.render(error=error, oauth_configured=is_oauth_configured(), **_nav_ctx(request)))
 
 
 @app.get("/auth/google/login")
@@ -614,9 +650,9 @@ async def index(request: Request):
         user = _current_user(request)
         if not user:
             return RedirectResponse("/login", status_code=303)
-    tpl = _jinja.get_template("index.html")
+    tpl = _jinja.get_template(_pick_template(request, "index.html"))
     user = _current_user(request) or {}
-    return HTMLResponse(tpl.render(user=user))
+    return HTMLResponse(tpl.render(user=user, **_nav_ctx(request)))
 
 
 @app.get("/report", response_class=HTMLResponse)
@@ -624,8 +660,8 @@ async def report_page(request: Request):
     user = _current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    tpl = _jinja.get_template("report.html")
-    return HTMLResponse(tpl.render(user=user))
+    tpl = _jinja.get_template(_pick_template(request, "report.html"))
+    return HTMLResponse(tpl.render(user=user, **_nav_ctx(request)))
 
 
 @app.get("/journal", response_class=HTMLResponse)
@@ -643,8 +679,8 @@ async def journal_page(request: Request):
         (user["email"],),
     ).fetchall()
     conn.close()
-    tpl = _jinja.get_template("journal.html")
-    return HTMLResponse(tpl.render(user=user, entries=[dict(r) for r in rows]))
+    tpl = _jinja.get_template(_pick_template(request, "journal.html"))
+    return HTMLResponse(tpl.render(user=user, entries=[dict(r) for r in rows], **_nav_ctx(request)))
 
 
 # ── Routes: Calorie API ────────────────────────────────────────────────

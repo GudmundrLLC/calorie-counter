@@ -35,6 +35,8 @@ h1{font-size:2rem;font-weight:400;letter-spacing:-0.02em;margin-bottom:0.3rem}
     <link rel="stylesheet" href="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-sidecar.css?v=2">
 </head>
 <body>
+{# Nav v2 · shared drawer primitive (no visible chip strip on login — auth gate) #}
+{% include 'partials/right_drawer.html' ignore missing %}
 <div class="login-card">
   <h1>Calorie Counter</h1>
   <p class="subtitle">Track what you eat. Know what you need.</p>
