@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from jinja2 import Environment, FileSystemLoader
 import openai as _openai
@@ -55,6 +56,7 @@ XAI_WHISPER_MODEL = "whisper-large-v3"
 app = FastAPI(title="Calorie & Blood Sugar Tracker", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 
 _jinja = Environment(loader=FileSystemLoader(str(APP_DIR / "templates")), autoescape=True)
 
