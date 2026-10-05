@@ -1395,6 +1395,138 @@ async def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# UNIVERSAL SEARCH · cross-app deep-link entry point.
+# GET /search?q=…           → HTML results page over the signed-in user's
+#                             meals, blood-sugar readings, and journal.
+# GET /search?q=…&format=json → JSON for programmatic callers.
+# Requires FA OAuth session; unauthenticated hits redirect to /login
+# with ?next= preserved so deep-links round-trip cleanly.
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.get("/search", response_class=HTMLResponse)
+async def search_universal(request: Request, q: str = "", format: str = "html", limit: int = 50):
+    import html as _html_s
+    import json as _json_s
+    from urllib.parse import quote as _quote_s
+    user = _current_user(request)
+    if not user:
+        next_url = f"/search?q={_quote_s(q)}" if q else "/search"
+        return RedirectResponse(f"/login?next={_quote_s(next_url)}", status_code=303)
+
+    q = (q or "").strip()
+    limit = max(1, min(limit, 200))
+    results = {"meals": [], "blood_sugar": [], "journal": []}
+
+    if q:
+        like = f"%{q}%"
+        conn = get_db()
+        try:
+            def rows(sql, params): return [dict(r) for r in conn.execute(sql, params).fetchall()]
+            results["meals"] = rows(
+                "SELECT id, entry_date, meal_type, raw_input, items, total_calories, notes "
+                "FROM entries WHERE user_email = ? AND "
+                "(COALESCE(raw_input,'') LIKE ? OR COALESCE(items,'') LIKE ? OR COALESCE(notes,'') LIKE ? OR COALESCE(meal_type,'') LIKE ?) "
+                "ORDER BY entry_date DESC, created_at DESC LIMIT ?",
+                (user["email"], like, like, like, like, limit))
+            results["blood_sugar"] = rows(
+                "SELECT id, entry_date, measured_at, value, unit, context, notes "
+                "FROM blood_sugar WHERE user_email = ? AND "
+                "(COALESCE(context,'') LIKE ? OR COALESCE(notes,'') LIKE ?) "
+                "ORDER BY entry_date DESC, measured_at DESC LIMIT ?",
+                (user["email"], like, like, limit))
+            results["journal"] = rows(
+                "SELECT je.id, je.entry_date, je.content, je.mood, je.tags, je.source "
+                "FROM journal_entries je "
+                "JOIN journal_entry_email jee ON jee.journal_id = je.id "
+                "WHERE jee.email = ? COLLATE NOCASE AND "
+                "(COALESCE(je.content,'') LIKE ? OR COALESCE(je.tags,'') LIKE ? OR COALESCE(je.mood,'') LIKE ?) "
+                "ORDER BY je.entry_date DESC LIMIT ?",
+                (user["email"], like, like, like, limit))
+        finally:
+            conn.close()
+
+    total = sum(len(v) for v in results.values())
+
+    if format == "json":
+        return JSONResponse({
+            "app": "calorie-counter",
+            "query": q,
+            "total": total,
+            "results": results,
+        })
+
+    def esc(s: str) -> str:
+        return _html_s.escape(s or "", quote=True)
+
+    def meal_items_preview(items_json: str) -> str:
+        try:
+            arr = _json_s.loads(items_json or "[]")
+            names = [x.get("name") or x.get("item") or "" for x in arr if isinstance(x, dict)]
+            return " · ".join(n for n in names if n)[:140]
+        except Exception:
+            return ""
+
+    meal_rows = "".join(
+        f'<li><a href="/?date={esc(r["entry_date"])}"><strong>{esc(r["entry_date"])}</strong></a>'
+        f' <span class="meta">· {esc(r.get("meal_type") or "meal")} · {int(r.get("total_calories") or 0)} kcal</span>'
+        f'<div class="excerpt">{esc(r.get("raw_input") or meal_items_preview(r.get("items")))}'
+        f'{" · " + esc(r.get("notes")) if r.get("notes") else ""}</div></li>'
+        for r in results["meals"]
+    )
+    bs_rows = "".join(
+        f'<li><a href="/?date={esc(r["entry_date"])}">{esc(r["entry_date"])}</a>'
+        f' <span class="meta">· {r.get("value")} {esc(r.get("unit") or "")} · {esc(r.get("context") or "")}'
+        f'{" · " + esc(r.get("notes")) if r.get("notes") else ""}</span></li>'
+        for r in results["blood_sugar"]
+    )
+    jr_rows = "".join(
+        f'<li><a href="/journal#entry-{r["id"]}">{esc(r["entry_date"])}</a>'
+        f' <span class="meta">· {esc(r.get("source") or "")}{" · " + esc(r.get("mood")) if r.get("mood") else ""}{" · " + esc(r.get("tags")) if r.get("tags") else ""}</span>'
+        f'<div class="excerpt">{esc((r.get("content") or "")[:300])}</div></li>'
+        for r in results["journal"]
+    )
+
+    empty = ""
+    if q and total == 0:
+        empty = f'<p class="empty">No matches for "{esc(q)}".</p>'
+    elif not q:
+        empty = '<p class="empty">Search across your meals, blood-sugar readings, and journal entries.</p>'
+
+    page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Search · Calorie Counter</title><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body {{ font: 15px/1.5 system-ui,-apple-system,sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #111; background: #fff; }}
+  @media (prefers-color-scheme: dark) {{ body {{ color: #eee; background: #111; }} a {{ color: #9ec5ff; }} }}
+  h1 {{ font-size: 1.4rem; margin: 0 0 1rem; }}
+  h2 {{ font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: #666; margin: 1.25rem 0 .5rem; }}
+  form {{ display: flex; gap: .5rem; margin-bottom: 1rem; }}
+  input[type=search] {{ flex: 1; padding: .55rem .7rem; font-size: 1rem; border: 1px solid #999; background: inherit; color: inherit; }}
+  button {{ padding: .55rem 1.1rem; cursor: pointer; }}
+  ul {{ list-style: none; padding: 0; margin: 0; }}
+  li {{ padding: .5rem 0; border-bottom: 1px dotted #ccc; }}
+  .meta {{ color: #777; font-size: .85rem; margin-left: .3rem; }}
+  .excerpt {{ color: #555; font-size: .9rem; margin-top: 3px; }}
+  .meta-bar {{ color: #666; font-size: .88rem; margin: .5rem 0; }}
+  .empty {{ color: #888; font-style: italic; padding: 2rem 0; text-align: center; }}
+  footer {{ margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; font-size: .82rem; color: #666; }}
+  footer a {{ color: inherit; }}
+</style></head><body>
+  <h1>Search · Calorie Counter</h1>
+  <form method="get" action="/search">
+    <input type="search" name="q" value="{esc(q)}" placeholder="Food, meal type, notes, mood, tag…" autofocus>
+    <button type="submit">Search</button>
+  </form>
+  {('<div class="meta-bar">' + str(total) + ' result' + ('' if total == 1 else 's') + ' for <strong>' + esc(q) + '</strong> · <a href="/search?q=' + esc(q) + '&amp;format=json" target="_blank" rel="noopener">JSON</a></div>') if q else ''}
+  {('<h2>Meals (' + str(len(results["meals"])) + ')</h2><ul>' + meal_rows + '</ul>') if results["meals"] else ''}
+  {('<h2>Blood sugar (' + str(len(results["blood_sugar"])) + ')</h2><ul>' + bs_rows + '</ul>') if results["blood_sugar"] else ''}
+  {('<h2>Journal (' + str(len(results["journal"])) + ')</h2><ul>' + jr_rows + '</ul>') if results["journal"] else ''}
+  {empty}
+  <footer><a href="/">Calorie Counter home</a> · <a href="/journal">Journal</a> · <a href="/report">Report</a></footer>
+</body></html>"""
+    return HTMLResponse(page)
+
+
 # ── Main ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
