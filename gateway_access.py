@@ -2,13 +2,13 @@
 
 Token claims (also returned by GET {GATEWAY_URL}/auth/userinfo):
   gw_v: 1 · gw_app: "<catalog app_id>"|null · gw_access: viewer|editor|admin|null
-  gw_role: admin|member · gw_status: active|invited
+  gw_role: admin|member · gw_status: active|invited · gw_enforced: bool
 
 Rules
   evaluate(claims, app_id)
-    -> ("ok", access)   gw_v present, gw_app == app_id and gw_access set
-    -> ("legacy", None) no gw_v: pre-v1 token, caller falls back to its own
-                         allowlist during the transition
+    -> ("ok", access)   gw_v present, enforced, gw_app == app_id, gw_access set
+    -> ("legacy", None) no gw_v (pre-v1 token) or gw_enforced false: caller
+                         keeps its own allowlist (current behaviour)
     -> ("denied", None) anything else
   still_allowed(email, app_id)
     Revocation check for long sessions. Polls
@@ -47,6 +47,11 @@ def evaluate(claims: dict | None, app_id: str) -> tuple[str, str | None]:
     if not claims:
         return "denied", None
     if claims.get("gw_v") is None:
+        return "legacy", None
+    # gw_enforced (per-app policy, flipped in the Gateway admin): false means
+    # the Gateway is not yet authoritative for this app, so the app keeps its
+    # own allowlist. Absent is treated as enforced (strict v1 reading).
+    if claims.get("gw_enforced") is False:
         return "legacy", None
     access = claims.get("gw_access")
     if claims.get("gw_app") == app_id and access in ACCESS_LEVELS:
