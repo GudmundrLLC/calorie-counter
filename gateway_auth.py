@@ -68,8 +68,12 @@ def gateway_callback_url(request, fallback_base: str = "", path: str = "/auth/ga
     return public_origin(request, fallback_base) + path
 
 
-def gateway_authorize_url(callback_url: str, state: str) -> str:
-    return f"{GATEWAY_URL}/auth/login?" + urlencode({"redirect_uri": callback_url, "state": state})
+def gateway_authorize_url(callback_url: str, state: str, app_id: str = "") -> str:
+    """Access claim v1: `app` makes the Gateway refuse users without access."""
+    q = {"redirect_uri": callback_url, "state": state}
+    if app_id:
+        q = {"app": app_id, **q}
+    return f"{GATEWAY_URL}/auth/login?" + urlencode(q)
 
 
 def new_oauth_state(request) -> str:

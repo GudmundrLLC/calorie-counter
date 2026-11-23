@@ -21,6 +21,9 @@ import uvicorn
 
 from auth import oauth, setup_oauth, is_oauth_configured, BASE_URL
 import gateway_auth
+import gateway_access
+
+GATEWAY_APP_ID = "calorie_counter"
 
 # Nav v2 · Phase 3 · S2 · 2026-09-25 — import-time side effect runs
 # migration + baseline seed on cold boot (mirrors bp-demo pattern).
@@ -101,8 +104,14 @@ def _current_user(request: Request) -> dict | None:
         if not is_oauth_configured() or "localhost" in BASE_URL or "127.0.0.1" in BASE_URL:
             return {"email": "local@dev", "name": "Local Dev", "picture_url": None}
         return None
+    if request.session.get("gw_access"):
+        # Gateway v1 session: the Gateway's per-app access list is the
+        # authority (polled ~60 s); the local table is not consulted.
+        if not gateway_access.still_allowed(email, GATEWAY_APP_ID):
+            request.session.clear()
+            return None
     # Verify against allowed list
-    if ADMIN_EMAILS and email.lower() not in ADMIN_EMAILS:
+    elif ADMIN_EMAILS and email.lower() not in ADMIN_EMAILS:
         conn = get_db()
         row = conn.execute("SELECT id FROM allowed_emails WHERE email=? COLLATE NOCASE", (email,)).fetchone()
         conn.close()
@@ -650,7 +659,9 @@ async def login_gateway(request: Request):
         return RedirectResponse("/login?error=gateway_not_configured", status_code=303)
     callback_url = gateway_auth.gateway_callback_url(request, BASE_URL)
     state = gateway_auth.new_oauth_state(request)
-    return RedirectResponse(gateway_auth.gateway_authorize_url(callback_url, state), status_code=303)
+    return RedirectResponse(
+        gateway_auth.gateway_authorize_url(callback_url, state, GATEWAY_APP_ID), status_code=303
+    )
 
 
 @app.get("/auth/gateway/callback")
@@ -663,19 +674,24 @@ async def auth_gateway_callback(request: Request, token: str = "", state: str = 
     if not claims:
         return RedirectResponse("/login?error=gateway_failed", status_code=303)
     addr = claims["email"].strip()
-    # Same allow-list rule as the Google callback: open when the table is
-    # empty, otherwise the address must be listed (or be in ADMIN_EMAILS).
-    conn = get_db()
-    try:
-        count = conn.execute("SELECT COUNT(*) as c FROM allowed_emails").fetchone()["c"]
-        if count > 0 and addr.lower() not in ADMIN_EMAILS:
-            allowed = conn.execute(
-                "SELECT id FROM allowed_emails WHERE email=? COLLATE NOCASE", (addr,)
-            ).fetchone()
-            if not allowed:
-                return RedirectResponse("/login?error=not_allowed", status_code=303)
-    finally:
-        conn.close()
+    verdict, access = gateway_access.evaluate(claims, GATEWAY_APP_ID)
+    if verdict == "denied":
+        return RedirectResponse("/login?error=not_allowed", status_code=303)
+    if verdict == "legacy":
+        # Pre-v1 token (transition only): same allow-list rule as the Google
+        # callback · open when the table is empty, otherwise listed or admin.
+        conn = get_db()
+        try:
+            count = conn.execute("SELECT COUNT(*) as c FROM allowed_emails").fetchone()["c"]
+            if count > 0 and addr.lower() not in ADMIN_EMAILS:
+                allowed = conn.execute(
+                    "SELECT id FROM allowed_emails WHERE email=? COLLATE NOCASE", (addr,)
+                ).fetchone()
+                if not allowed:
+                    return RedirectResponse("/login?error=not_allowed", status_code=303)
+        finally:
+            conn.close()
+    request.session["gw_access"] = access or ""
     request.session["user_email"] = addr
     request.session["user_name"] = claims.get("name") or addr
     request.session["user_picture"] = claims.get("picture") or ""
