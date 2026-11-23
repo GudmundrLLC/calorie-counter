@@ -20,6 +20,7 @@ import openai as _openai
 import uvicorn
 
 from auth import oauth, setup_oauth, is_oauth_configured, BASE_URL
+import gateway_auth
 
 # Nav v2 · Phase 3 · S2 · 2026-09-25 — import-time side effect runs
 # migration + baseline seed on cold boot (mirrors bp-demo pattern).
@@ -596,7 +597,7 @@ async def login_page(request: Request):
         return RedirectResponse("/", status_code=303)
     error = request.query_params.get("error", "")
     tpl = _jinja.get_template(_pick_template(request, "login.html"))
-    return HTMLResponse(tpl.render(error=error, oauth_configured=is_oauth_configured(), **_nav_ctx(request)))
+    return HTMLResponse(tpl.render(error=error, oauth_configured=is_oauth_configured(), gateway_configured=gateway_auth.is_gateway_configured(), **_nav_ctx(request)))
 
 
 @app.get("/auth/google/login")
@@ -634,6 +635,51 @@ async def google_callback(request: Request):
     request.session["user_email"] = email
     request.session["user_name"] = userinfo.get("name", email)
     request.session["user_picture"] = userinfo.get("picture", "")
+    return RedirectResponse("/", status_code=303)
+
+
+# ── Gudmundr Gateway SSO (primary ecosystem sign-in) ──────────────────
+# The Google button builds its callback from BASE_URL (the Railway host),
+# so a sign-in started on meals.gudmundr.com lost its OAuth state cookie
+# and ended at /login?error=oauth_failed. Gateway SSO builds the callback
+# from the host the browser is on.
+
+@app.get("/login/gateway")
+async def login_gateway(request: Request):
+    if not gateway_auth.is_gateway_configured():
+        return RedirectResponse("/login?error=gateway_not_configured", status_code=303)
+    callback_url = gateway_auth.gateway_callback_url(request, BASE_URL)
+    state = gateway_auth.new_oauth_state(request)
+    return RedirectResponse(gateway_auth.gateway_authorize_url(callback_url, state), status_code=303)
+
+
+@app.get("/auth/gateway/callback")
+async def auth_gateway_callback(request: Request, token: str = "", state: str = ""):
+    if not gateway_auth.is_gateway_configured():
+        return RedirectResponse("/login?error=gateway_not_configured", status_code=303)
+    if not gateway_auth.check_state(request, state):
+        return RedirectResponse("/login?error=gateway_failed", status_code=303)
+    claims, _detail = gateway_auth.fetch_userinfo(token)
+    if not claims:
+        return RedirectResponse("/login?error=gateway_failed", status_code=303)
+    addr = claims["email"].strip()
+    # Same allow-list rule as the Google callback: open when the table is
+    # empty, otherwise the address must be listed (or be in ADMIN_EMAILS).
+    conn = get_db()
+    try:
+        count = conn.execute("SELECT COUNT(*) as c FROM allowed_emails").fetchone()["c"]
+        if count > 0 and addr.lower() not in ADMIN_EMAILS:
+            allowed = conn.execute(
+                "SELECT id FROM allowed_emails WHERE email=? COLLATE NOCASE", (addr,)
+            ).fetchone()
+            if not allowed:
+                return RedirectResponse("/login?error=not_allowed", status_code=303)
+    finally:
+        conn.close()
+    request.session["user_email"] = addr
+    request.session["user_name"] = claims.get("name") or addr
+    request.session["user_picture"] = claims.get("picture") or ""
+    request.session["idp"] = "gateway"
     return RedirectResponse("/", status_code=303)
 
 
