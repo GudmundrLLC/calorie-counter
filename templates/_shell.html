@@ -34,13 +34,13 @@
 <script type="application/json" id="cc-ai">{{ ai|tojson }}</script>
 {% if user %}
 <!-- Page menu · the kit moves it into the left rail (bottom dock on phones) -->
-<nav data-dduui-menu data-dd-group-label="Log" aria-label="Meals pages">
+<!-- One menu, no group label: in kit 1.0.2 a second [data-dduui-menu] group
+     shares the phone dock row and squeezes items below 44px (kit request). -->
+<nav data-dduui-menu aria-label="Meals pages">
   <a href="/" data-icon="apple" data-dd-dock {% if page == 'tracker' %}aria-current="page"{% endif %}>Tracker</a>
   <a href="/journal" data-icon="book" data-dd-dock {% if page == 'journal' %}aria-current="page"{% endif %}>Journal</a>
   <a href="/report" data-icon="bar-chart" data-dd-dock {% if page == 'report' %}aria-current="page"{% endif %}>Report</a>
   <a href="/search" data-icon="search" data-dd-dock {% if page == 'search' %}aria-current="page"{% endif %}>Search</a>
-</nav>
-<nav data-dduui-menu data-dd-group-label="Data &amp; help" aria-label="Meals data and help">
   <a href="/api/export?days=30" data-icon="upload" download="meals-export.json">Export JSON</a>
   <a href="/help" data-icon="help-circle" {% if page == 'help' %}aria-current="page"{% endif %}>Help</a>
 </nav>
