@@ -1,0 +1,39 @@
+{% extends "_shell.html" %}
+{% from "_macros.html" import pagehead %}
+{% block title %}Search{% endblock %}
+{% block content %}
+{{ pagehead("Search", "Across your meals, blood-sugar readings and journal.") }}
+<form method="get" action="/search" class="cc-row cc-searchform" role="search">
+  <label class="cc-sr" for="q">Search terms</label>
+  <input type="search" id="q" name="q" value="{{ q }}" placeholder="Food, meal type, notes, mood, tag…" class="cc-grow">
+  <button type="submit" class="cc-btn cc-btn--primary">Search</button>
+</form>
+{% if q %}
+<p class="cc-faint cc-small">{{ total }} result{{ '' if total == 1 else 's' }} for <b>{{ q }}</b> · <a href="/search?q={{ q|urlencode }}&amp;format=json">JSON</a></p>
+{% endif %}
+{% if results.meals %}
+<section class="cc-card"><h2 class="cc-h2">Meals ({{ results.meals|length }})</h2>
+<ul class="cc-list">{% for r in results.meals %}
+  <li class="cc-item cc-item--stack"><a href="/?date={{ r.entry_date|urlencode }}"><b>{{ r.entry_date }}</b></a>
+    <span class="cc-faint cc-small">{{ r.meal_type or 'meal' }} · {{ (r.total_calories or 0)|int }} kcal</span>
+    <span>{{ r.preview }}{% if r.notes %} · {{ r.notes }}{% endif %}</span></li>
+{% endfor %}</ul></section>
+{% endif %}
+{% if results.blood_sugar %}
+<section class="cc-card"><h2 class="cc-h2">Blood sugar ({{ results.blood_sugar|length }})</h2>
+<ul class="cc-list">{% for r in results.blood_sugar %}
+  <li class="cc-item cc-item--stack"><a href="/?date={{ r.entry_date|urlencode }}">{{ r.entry_date }}</a>
+    <span class="cc-faint cc-small">{{ r.value }} {{ r.unit or '' }} · {{ r.context or '' }}{% if r.notes %} · {{ r.notes }}{% endif %}</span></li>
+{% endfor %}</ul></section>
+{% endif %}
+{% if results.journal %}
+<section class="cc-card"><h2 class="cc-h2">Journal ({{ results.journal|length }})</h2>
+<ul class="cc-list">{% for r in results.journal %}
+  <li class="cc-item cc-item--stack"><a href="/journal#entry-{{ r.id }}">{{ r.entry_date }}</a>
+    <span class="cc-faint cc-small">{{ r.source or '' }}{% if r.mood %} · {{ r.mood }}{% endif %}{% if r.tags %} · {{ r.tags }}{% endif %}</span>
+    <span>{{ (r.content or '')[:300] }}</span></li>
+{% endfor %}</ul></section>
+{% endif %}
+{% if q and total == 0 %}<p class="cc-empty">No matches for “{{ q }}”.</p>
+{% elif not q %}<p class="cc-empty">Search across your meals, blood-sugar readings, and journal entries.</p>{% endif %}
+{% endblock %}

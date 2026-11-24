@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<title>{% block title %}Meals{% endblock %} · Gudmundr</title>
+<!-- DDUUI shell + chrome · served by Gudmundr Gateway (ecosystem plan 2026-11-22 · pilots 488/489) -->
+<link rel="stylesheet" href="{{ gateway_url }}/svc/dduui/tokens.css?theme=lumen">
+<link rel="stylesheet" href="{{ gateway_url }}/static/dduui/chrome.css">
+<link rel="stylesheet" href="/static/app.css?v=20261123">
+<script>
+  window.DDUUI_CHROME = {
+    appId: "calorie_counter",
+    appName: "Meals",
+    appIcon: "apple",
+    gateway: {{ gateway_url|tojson }},
+    menuLabel: "Meals",
+    theme: "lumen",
+    template: "DDUUI app shell",
+    docsHref: "/help",
+    helpHref: "/help",
+    catalogUrl: {{ ("/api/ecosystem/my-apps" if user else none)|tojson }},
+    gatewayToken: null
+  };
+</script>
+<script src="{{ gateway_url }}/static/dduui/chrome.js" defer></script>
+<script src="/static/shell.js?v=20261123" defer></script>
+{% block head %}{% endblock %}
+</head>
+<body>
+<script type="application/json" id="cc-user">{{ ({"name": user.name, "email": user.email, "idp": user.idp} if user else none)|tojson }}</script>
+<script type="application/json" id="cc-ai">{{ ai|tojson }}</script>
+{% if user %}
+<!-- Page menu · moved into the DDUUI left rail (bottom dock on phones) by chrome.js -->
+<nav data-dduui-menu aria-label="Meals pages">
+  <a href="/" data-icon="apple" data-dd-dock {% if page == 'tracker' %}aria-current="page"{% endif %}>Tracker</a>
+  <a href="/journal" data-icon="book" data-dd-dock {% if page == 'journal' %}aria-current="page"{% endif %}>Journal</a>
+  <a href="/report" data-icon="bar-chart" data-dd-dock {% if page == 'report' %}aria-current="page"{% endif %}>Report</a>
+  <a href="/search" data-icon="search" data-dd-dock {% if page == 'search' %}aria-current="page"{% endif %}>Search</a>
+  <a href="/api/export?days=30" data-icon="upload" download="meals-export.json">Export JSON</a>
+  <a href="/help" data-icon="help-circle" {% if page == 'help' %}aria-current="page"{% endif %}>Help</a>
+</nav>
+{% endif %}
+<div class="cc-page" id="cc-page">
+{% block content %}{% endblock %}
+</div>
+<div id="cc-toast" class="cc-toast" role="status" hidden></div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

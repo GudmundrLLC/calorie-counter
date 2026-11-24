@@ -1,0 +1,22 @@
+{% extends "_shell.html" %}
+{% from "_macros.html" import pagehead %}
+{% block title %}Help{% endblock %}
+{% block content %}
+{{ pagehead("Help", "How Meals works inside the Gudmundr ecosystem.") }}
+<section class="cc-card cc-prose">
+  <h2 class="cc-h2">Pages</h2>
+  <ul>
+    <li><b>Tracker</b> · log meals by text, voice or photo; log blood-sugar readings; browse the daily log by day; 7-day history.</li>
+    <li><b>Journal</b> · entries imported from Family Alignment for your email.</li>
+    <li><b>Report</b> · printable 7, 14 or 30-day nutrition and blood-sugar report (Print / Save PDF).</li>
+    <li><b>Search</b> · find meals, readings and journal entries; add <code>format=json</code> for machine use.</li>
+    <li><b>Export JSON</b> · download the last 30 days.</li>
+  </ul>
+  <h2 class="cc-h2">Sign-in</h2>
+  <p>Use <b>Sign in with Gudmundr</b>: one sign-in for every Gudmundr app. Your meal history is kept by email, so it carries over from the old Google sign-in. Access to Meals is granted by the Gudmundr admin.</p>
+  <h2 class="cc-h2">AI estimates</h2>
+  <p>Estimates are produced through the Gudmundr Gateway (IBM Granite first, with fallbacks) and are approximate, based on USDA FoodData Central. Blood-sugar values are self-reported. This is not medical advice.</p>
+  <h2 class="cc-h2">Layout</h2>
+  <p>Pages are on the left (bottom on phones); ecosystem apps and appearance (auto, light, dark) are on the right. Use the pin buttons to keep either rail pinned; the choice is remembered. <b>High contrast</b> is at the top of each page.</p>
+</section>
+{% endblock %}

@@ -1,582 +1,87 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#385E3F">
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<title>Calorie & Blood Sugar Tracker</title>
-<script>(function(){try{var q=new URLSearchParams(location.search).get("theme");var t;if(q==="light"||q==="dark"){t=q;try{localStorage.setItem("theme",t)}catch(_){}}else{t=localStorage.getItem("theme")||"light"}document.documentElement.setAttribute("data-theme",t);if(localStorage.getItem("high_contrast")==="1"){document.documentElement.classList.add("high-contrast")}}catch(_){}})();</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
-<style>
-:root{--brand:#502379;--brand-mid:#6b2f9e;--brand-dark:#3a1858;--teal:#00a0a0;--teal-dark:#007a7a;--ink:#1a1a1a;--ink-mid:#3a3a3a;--ink-light:#666;--ink-faint:#999;--rule:#c8c8c8;--rule-light:#e4e4e4;--rule-faint:#f0f0f0;--page:#fefcf8;--cream:#f8f6f2;--cream-dark:#f2ede4;--brand-tint:#f7f4fb;--teal-tint:#edfafa;--red:#c0392b;--green:#1e7e34;--amber:#b8860b}
-[data-theme="dark"]{--brand:#a78bfa;--brand-mid:#b794f6;--brand-dark:#8b5cf6;--teal:#67e8f9;--teal-dark:#22d3ee;--ink:#e8e6f0;--ink-mid:#c0b8d0;--ink-light:#9089a5;--ink-faint:#6b6580;--rule:#4a4258;--rule-light:#3a3348;--rule-faint:#2a2438;--page:#1a1428;--cream:#1e1832;--cream-dark:#2a1e40;--brand-tint:#2a1e40;--teal-tint:#1c2830;--red:#f87171;--green:#4ade80;--amber:#fbbf24}
-.high-contrast,.high-contrast[data-theme="dark"]{--brand:#000;--brand-mid:#000;--brand-dark:#000;--teal:#000;--teal-dark:#000;--ink:#000;--ink-mid:#000;--ink-light:#111;--ink-faint:#222;--rule:#000;--rule-light:#666;--rule-faint:#888;--page:#fff;--cream:#fff;--cream-dark:#f0f0f0;--brand-tint:#eee;--teal-tint:#eee;--red:#8b0000;--green:#004d00;--amber:#663d00}
-.hamburger-panel a.signout:hover{background:var(--red);color:#fff}
-[data-theme="dark"] .hamburger-panel .theme-row,.high-contrast .hamburger-panel .theme-row{border-top:1px solid var(--rule-light)}
-.hamburger-panel .theme-row{border-top:1px solid var(--rule-light);padding:0.5rem 0.95rem 0.6rem;display:flex;flex-direction:column;gap:0.4rem}
-.hamburger-panel .theme-row label{display:flex;align-items:center;justify-content:space-between;font-family:'Libre Baskerville',Georgia,serif;font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-light);cursor:pointer}
-.hamburger-panel .theme-row .toggle{position:relative;width:36px;height:20px;background:var(--rule);border-radius:10px;transition:background 0.15s}
-.hamburger-panel .theme-row .toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--page);transition:transform 0.15s;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
-.hamburger-panel .theme-row input:checked+.toggle{background:var(--brand)}
-.hamburger-panel .theme-row input:checked+.toggle::after{transform:translateX(16px)}
-.hamburger-panel .theme-row input{position:absolute;opacity:0;pointer-events:none}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:16px}
-body{font-family:'EB Garamond',Georgia,'Times New Roman',serif;background:var(--cream);color:var(--ink);line-height:1.6;min-height:100vh}
-.app{max-width:720px;margin:0 auto;padding:2rem 1.5rem 4rem}
-/* Masthead */
-.masthead{display:flex;justify-content:space-between;align-items:center;padding-bottom:1.5rem;margin-bottom:2rem;border-bottom:2px double var(--rule);gap:1rem}
-.mh-left{text-align:left}
-.masthead h1{font-size:2.2rem;font-weight:400;letter-spacing:-0.02em;line-height:1.1}
-.masthead .subtitle{font-family:'Libre Baskerville',Georgia,serif;font-size:0.82rem;color:var(--ink-light);margin-top:0.25rem;letter-spacing:0.03em}
-.hamburger{position:relative}
-.hamburger-btn{background:none;border:1px solid var(--rule);border-radius:4px;padding:0.45rem 0.55rem;cursor:pointer;color:var(--ink-mid);display:inline-flex;flex-direction:column;gap:4px;line-height:0;transition:border-color 0.15s,color 0.15s}
-.hamburger-btn:hover{border-color:var(--brand);color:var(--brand)}
-.hamburger-btn span{display:block;width:18px;height:2px;background:currentColor;border-radius:1px}
-.hamburger-panel{position:absolute;right:0;top:calc(100% + 6px);background:var(--page);border:1px solid var(--rule);border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,0.10);min-width:200px;padding:0.4rem 0;z-index:30;display:none}
-.hamburger.open .hamburger-panel{display:block}
-.hamburger-user{padding:0.5rem 0.95rem;font-family:'Libre Baskerville',Georgia,serif;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-faint);border-bottom:1px solid var(--rule-light);margin-bottom:0.25rem}
-.hamburger-panel a{display:block;padding:0.55rem 0.95rem;font-family:'Libre Baskerville',Georgia,serif;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--brand);text-decoration:none}
-.hamburger-panel a:hover{background:var(--brand-tint)}
-.hamburger-panel .divider{height:1px;background:var(--rule-light);margin:0.3rem 0}
-.hamburger-panel a.signout{color:var(--red)}
-.hamburger-panel a.signout:hover{background:#fbe8e5}
-/* KPI */
-.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem;margin-bottom:2rem}
-.kpi-card{background:var(--page);border:1px solid var(--rule-light);border-radius:4px;padding:0.8rem 0.6rem;text-align:center}
-.kpi-value{font-size:1.7rem;font-weight:600;color:var(--brand);line-height:1.1}
-.kpi-value.teal{color:var(--teal-dark)}
-.kpi-value.red{color:var(--red)}
-.kpi-label{font-family:'Libre Baskerville',Georgia,serif;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--ink-faint);margin-top:0.2rem}
-/* Section */
-.section-header{font-size:1.1rem;font-weight:600;color:var(--brand);border-bottom:1px solid var(--rule-light);padding-bottom:0.4rem;margin-bottom:1rem;margin-top:0.5rem}
-/* Tabs */
-.tab-nav{display:flex;gap:0;border-bottom:2px solid var(--rule-light);margin-bottom:1.25rem}
-.tab-btn{font-family:'Libre Baskerville',Georgia,serif;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--ink-faint);background:none;border:none;padding:0.6rem 1rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color 0.2s,border-color 0.2s}
-.tab-btn:hover{color:var(--ink-mid)}
-.tab-btn.active{color:var(--brand);border-bottom-color:var(--brand)}
-.tab-pane{display:none}
-.tab-pane.active{display:block}
-/* Input */
-.input-section{background:var(--page);border:1px solid var(--rule-light);border-radius:4px;padding:1.25rem;margin-bottom:2rem}
-textarea{width:100%;min-height:70px;font-family:'EB Garamond',Georgia,serif;font-size:1.05rem;line-height:1.5;color:var(--ink);background:var(--page);border:1px solid var(--rule);border-radius:3px;padding:0.75rem;resize:vertical}
-textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-tint)}
-textarea::placeholder{color:var(--ink-faint);font-style:italic}
-input[type="number"]{font-family:'EB Garamond',Georgia,serif;font-size:1.1rem;width:100%;padding:0.6rem 0.75rem;border:1px solid var(--rule);border-radius:3px;background:var(--page);color:var(--ink)}
-input[type="number"]:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-tint)}
-select{font-family:'Libre Baskerville',Georgia,serif;font-size:0.8rem;padding:0.5rem;border:1px solid var(--rule);border-radius:3px;background:var(--page);color:var(--ink)}
-.btn-primary{font-family:'Libre Baskerville',Georgia,serif;font-size:0.8rem;font-weight:700;letter-spacing:0.5px;color:#fff;background:var(--brand);border:none;border-radius:3px;padding:0.6rem 1.5rem;margin-top:0.75rem;cursor:pointer;transition:background 0.2s}
-.btn-primary:hover{background:var(--brand-mid)}
-.btn-primary:disabled{background:var(--ink-faint);cursor:not-allowed}
-.btn-teal{background:var(--teal)}
-.btn-teal:hover{background:var(--teal-dark)}
-/* Voice */
-.voice-area{text-align:center;padding:1rem 0}
-.btn-record{font-family:'Libre Baskerville',Georgia,serif;font-size:0.85rem;font-weight:700;color:var(--ink-mid);background:var(--cream);border:2px solid var(--rule);border-radius:50px;padding:0.8rem 2rem;cursor:pointer;transition:all 0.2s}
-.btn-record:hover{border-color:var(--brand);color:var(--brand)}
-.btn-record.recording{color:var(--red);border-color:var(--red);animation:pulse 1.5s ease-in-out infinite}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(192,57,43,0.3)}50%{box-shadow:0 0 0 8px rgba(192,57,43,0)}}
-.record-dot{display:inline-block;width:8px;height:8px;background:currentColor;border-radius:50%;margin-right:0.4rem;vertical-align:middle}
-.transcript{font-size:1rem;color:var(--ink-mid);font-style:italic;margin-top:1rem;min-height:1.5rem}
-/* Photo */
-.photo-area{padding:0.5rem 0}
-.upload-zone{border:2px dashed var(--rule);border-radius:4px;padding:2rem;text-align:center;cursor:pointer;transition:border-color 0.2s,background 0.2s}
-.upload-zone:hover,.upload-zone.dragover{border-color:var(--brand);background:var(--brand-tint)}
-.upload-zone input[type="file"]{display:none}
-.upload-icon{font-size:2rem;color:var(--ink-faint);margin-bottom:0.5rem}
-.upload-text{font-family:'Libre Baskerville',Georgia,serif;font-size:0.8rem;color:var(--ink-light)}
-.upload-text strong{color:var(--brand)}
-.photo-preview{margin-top:1rem;text-align:center}
-.photo-preview img{max-width:100%;max-height:200px;border-radius:3px;border:1px solid var(--rule-light)}
-/* Result */
-.result-card{background:var(--brand-tint);border-left:3px solid var(--brand);border-radius:0 4px 4px 0;padding:1.25rem;margin-bottom:2rem;animation:slideIn 0.3s ease}
-@keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-.result-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.75rem}
-.result-total{font-size:1.8rem;font-weight:600;color:var(--brand)}
-.result-total small{font-size:0.8rem;font-weight:400;color:var(--ink-light)}
-.confidence-badge{font-family:'Libre Baskerville',Georgia,serif;font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:0.2rem 0.5rem;border-radius:3px}
-.confidence-high{background:#e6f4ea;color:var(--green)}
-.confidence-medium{background:#fef3e6;color:var(--amber)}
-.confidence-low{background:#fde8e8;color:var(--red)}
-.result-items{list-style:none}
-.result-items li{display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px dotted var(--rule-light);font-size:0.95rem}
-.result-items li:last-child{border-bottom:none}
-.item-name{color:var(--ink-mid)}
-.item-qty{color:var(--ink-faint);font-style:italic;margin-left:0.5rem}
-.item-cal{font-weight:600;color:var(--ink);white-space:nowrap}
-.result-macros{display:flex;gap:1rem;margin-top:0.5rem;font-size:0.78rem;color:var(--ink-light)}
-.result-macros span{font-weight:600;color:var(--ink-mid)}
-.result-notes{font-size:0.82rem;color:var(--ink-light);font-style:italic;margin-top:0.6rem}
-/* Loading */
-.loading{text-align:center;padding:1.5rem;color:var(--ink-faint);font-style:italic}
-.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--rule-light);border-top-color:var(--brand);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:0.5rem}
-@keyframes spin{to{transform:rotate(360deg)}}
-/* Day nav */
-.day-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
-.day-nav button{font-family:'EB Garamond',Georgia,serif;font-size:0.9rem;color:var(--brand);background:none;border:none;cursor:pointer;padding:0.3rem 0.5rem}
-.day-nav button:hover{text-decoration:underline}
-.day-nav button:disabled{color:var(--ink-faint);cursor:default;text-decoration:none}
-.day-label{font-family:'Libre Baskerville',Georgia,serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--ink-light)}
-/* Log */
-.log-section{margin-bottom:2.5rem}
-.meal-group{margin-bottom:1.25rem}
-.meal-label{font-family:'Libre Baskerville',Georgia,serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--ink-faint);margin-bottom:0.5rem}
-.entry-card{background:var(--page);border:1px solid var(--rule-light);border-radius:4px;padding:0.85rem 1rem;margin-bottom:0.5rem;position:relative}
-.entry-top{display:flex;justify-content:space-between;align-items:baseline}
-.entry-desc{font-size:0.95rem;color:var(--ink-mid);flex:1}
-.entry-cal{font-size:1.1rem;font-weight:600;color:var(--brand);margin-left:1rem;white-space:nowrap}
-.entry-meta{font-size:0.75rem;color:var(--ink-faint);margin-top:0.25rem}
-.entry-items{font-size:0.82rem;color:var(--ink-light);margin-top:0.3rem}
-.btn-delete{position:absolute;top:0.5rem;right:0.5rem;font-size:0.75rem;color:var(--ink-faint);background:none;border:none;cursor:pointer;padding:0.2rem 0.4rem;opacity:0;transition:opacity 0.2s,color 0.2s}
-.entry-card:hover .btn-delete{opacity:1}
-.btn-edit-time{background:none;border:none;color:var(--brand);font-size:0.72rem;text-decoration:underline;cursor:pointer;padding:0 4px;margin-left:6px;font-family:inherit}
-.btn-edit-time:hover{color:var(--brand-mid)}
-.btn-delete:hover{color:var(--red)}
-.type-badge{font-family:'Libre Baskerville',Georgia,serif;font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;padding:0.1rem 0.35rem;border-radius:2px;margin-right:0.4rem}
-.type-text{background:var(--brand-tint);color:var(--brand)}
-.type-voice{background:var(--teal-tint);color:var(--teal-dark)}
-.type-photo{background:#fef3e6;color:var(--amber)}
-.empty-state{text-align:center;padding:2rem;color:var(--ink-faint);font-style:italic;font-size:0.95rem}
-/* Blood sugar */
-.bs-section{margin-bottom:2.5rem}
-.bs-form{display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem}
-.bs-form .field{display:flex;flex-direction:column;gap:0.25rem}
-.bs-form .field label{font-family:'Libre Baskerville',Georgia,serif;font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-faint)}
-.bs-reading{background:var(--page);border:1px solid var(--rule-light);border-radius:4px;padding:0.65rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;position:relative}
-.bs-value{font-size:1.1rem;font-weight:600}
-.bs-normal{color:var(--green)}
-.bs-elevated{color:var(--amber)}
-.bs-high{color:var(--red)}
-.bs-meta{font-size:0.75rem;color:var(--ink-faint)}
-.bs-context{font-family:'Libre Baskerville',Georgia,serif;font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;padding:0.1rem 0.35rem;border-radius:2px;background:var(--cream-dark);color:var(--ink-light);margin-right:0.5rem}
-.bs-reading:hover .btn-delete{opacity:1}
-/* Chart */
-.history-section{margin-bottom:2.5rem}
-.chart-row{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.4rem}
-.chart-label{font-family:'Libre Baskerville',Georgia,serif;font-size:0.7rem;color:var(--ink-light);width:2.5rem;text-align:right;flex-shrink:0}
-.chart-bar-wrap{flex:1;height:20px;background:var(--rule-faint);border-radius:2px;overflow:hidden}
-.chart-bar{height:100%;background:linear-gradient(90deg,var(--brand-tint),var(--brand));border-radius:2px;transition:width 0.5s ease;min-width:2px}
-.chart-bar.today{background:linear-gradient(90deg,var(--teal-tint),var(--teal))}
-.chart-val{font-size:0.78rem;color:var(--ink-mid);width:3.5rem;flex-shrink:0}
-/* Export */
-.export-bar{display:flex;gap:1.5rem;justify-content:flex-end;margin-bottom:1.5rem}
-.export-link{font-family:'Libre Baskerville',Georgia,serif;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--brand);text-decoration:none}
-.export-link:hover{text-decoration:underline}
-/* Footer */
-.compliance-footer{text-align:center;padding:1.5rem;font-size:0.75rem;color:var(--ink-faint);border-top:1px solid var(--rule-light);max-width:720px;margin:0 auto}
-/* Responsive */
-@media(max-width:540px){
-  .app{padding:1.25rem 1rem 3rem}
-  .masthead h1{font-size:1.7rem}
-  .kpi-strip{grid-template-columns:repeat(2,1fr);gap:0.5rem}
-  .kpi-value{font-size:1.3rem}
-  .kpi-label{font-size:0.55rem}
-  .tab-btn{padding:0.5rem 0.7rem;font-size:0.65rem}
-  .result-total{font-size:1.4rem}
-  .bs-form{flex-direction:column;align-items:stretch}
-  .masthead{align-items:center}
-  .hamburger-panel{min-width:180px}
-}
-</style>
-    <!-- ECOSYSTEM_SIDECAR_WIRING_v2 · bp-demo cross-app sidecar (2026-09-24) -->
-    <script>
-      (function(){
-        var qs = new URLSearchParams(window.location.search);
-        if (qs.get('sidecar') === '1') document.documentElement.setAttribute('data-sidecar', '1');
-        var t = qs.get('theme'); if (t) document.documentElement.setAttribute('data-theme', t);
-        var hc = qs.get('hc');    if (hc !== null) document.documentElement.setAttribute('data-hc', hc);
-        var d = qs.get('d');      if (d) document.documentElement.setAttribute('data-density', d);
-      })();
-    </script>
-    <script src="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-bridge.js?v=2"></script>
-    <link rel="stylesheet" href="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-sidecar.css?v=2">
-</head>
-<body>
-{# Nav v2 · shared drawer + chip primitives (S2 · Phase 3 · additive) #}
-{% include 'partials/right_drawer.html' ignore missing %}
-{% include 'partials/chip_note.html' ignore missing %}
-<div class="app">
+{% extends "_shell.html" %}
+{% from "_macros.html" import pagehead %}
+{% block title %}Tracker{% endblock %}
+{% block content %}
+{{ pagehead("Calorie & Blood Sugar Tracker", "Track what you eat. Know what you need.") }}
 
-  <header class="masthead">
-    <div class="mh-left">
-      <h1>Calorie & Blood Sugar Tracker</h1>
-      <p class="subtitle">Track what you eat. Know what you need.
-        {% include 'partials/nav_v2_chips.html' ignore missing %}
-      </p>
-    </div>
-    <div class="hamburger" id="mainMenu">
-      <button class="hamburger-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mainMenuPanel" onclick="toggleMenu(event)">
-        <span></span><span></span><span></span>
-      </button>
-      <div class="hamburger-panel" id="mainMenuPanel" role="menu">
-        {% if user and user.email != 'local@dev' %}
-          <div class="hamburger-user">{{ user.name or user.email }}</div>
-        {% endif %}
-        <a href="/" role="menuitem">Tracker</a>
-        <a href="/journal" role="menuitem">Journal</a>
-        <a href="/report" role="menuitem" target="_blank">Print Report</a>
-        <a href="/api/export?days=30" role="menuitem" target="_blank">Export JSON</a>
-        <div class="theme-row" role="group" aria-label="Display">
-          <label>Dark mode
-            <input type="checkbox" id="themeToggle" onchange="toggleTheme(this)">
-            <span class="toggle"></span>
-          </label>
-          <label>High contrast
-            <input type="checkbox" id="hcToggle" onchange="toggleHighContrast(this)">
-            <span class="toggle"></span>
-          </label>
-        </div>
-        {% if user and user.email != 'local@dev' %}
-          <div class="divider"></div>
-          <a href="/logout" role="menuitem" class="signout">Sign Out</a>
-        {% endif %}
-      </div>
-    </div>
-  </header>
+<section class="cc-kpis" aria-label="Today at a glance">
+  <div class="cc-kpi"><div class="cc-kpi__v" id="kpi-today">&mdash;</div><div class="cc-kpi__k">Today cal</div></div>
+  <div class="cc-kpi"><div class="cc-kpi__v" id="kpi-week">&mdash;</div><div class="cc-kpi__k">Week total</div></div>
+  <div class="cc-kpi"><div class="cc-kpi__v" id="kpi-avg">&mdash;</div><div class="cc-kpi__k">Daily avg</div></div>
+  <div class="cc-kpi"><div class="cc-kpi__v" id="kpi-bs">&mdash;</div><div class="cc-kpi__k">Last BG mg/dL</div></div>
+</section>
 
-  <div class="kpi-strip">
-    <div class="kpi-card"><div class="kpi-value" id="kpi-today">&mdash;</div><div class="kpi-label">Today Cal</div></div>
-    <div class="kpi-card"><div class="kpi-value teal" id="kpi-week">&mdash;</div><div class="kpi-label">Week Total</div></div>
-    <div class="kpi-card"><div class="kpi-value" id="kpi-avg">&mdash;</div><div class="kpi-label">Daily Avg</div></div>
-    <div class="kpi-card"><div class="kpi-value red" id="kpi-bs">&mdash;</div><div class="kpi-label">Last BG</div></div>
-  </div>
-
-  <!-- ── Calorie Input ── -->
-  <section class="input-section">
-    <div class="tab-nav" role="tablist">
-      <button class="tab-btn active" role="tab" data-tab="text" aria-selected="true">Text</button>
-      <button class="tab-btn" role="tab" data-tab="voice" aria-selected="false">Voice</button>
-      <button class="tab-btn" role="tab" data-tab="photo" aria-selected="false">Photo</button>
+<div class="cc-grid">
+  <section class="cc-card" aria-labelledby="log-h" data-cc-priority="1">
+    <h2 class="cc-h2" id="log-h">Log a meal</h2>
+    <div class="cc-tabs" role="tablist" aria-label="Input method">
+      <button type="button" class="cc-tab" role="tab" id="tabbtn-text" data-tab="text" aria-selected="true" aria-controls="tab-text">Text</button>
+      <button type="button" class="cc-tab" role="tab" id="tabbtn-voice" data-tab="voice" aria-selected="false" aria-controls="tab-voice" tabindex="-1">Voice</button>
+      <button type="button" class="cc-tab" role="tab" id="tabbtn-photo" data-tab="photo" aria-selected="false" aria-controls="tab-photo" tabindex="-1">Photo</button>
     </div>
-    <div class="tab-pane active" id="tab-text" role="tabpanel">
-      <textarea id="food-input" placeholder="What did you eat? e.g., 2 scrambled eggs, toast with butter, coffee with cream"></textarea>
-      <button class="btn-primary" id="btn-estimate" onclick="estimateText()">Estimate Calories</button>
+    <div class="cc-tabpane" id="tab-text" role="tabpanel" aria-labelledby="tabbtn-text">
+      <label class="cc-label" for="food-input">What did you eat?</label>
+      <textarea id="food-input" rows="3" placeholder="e.g. 2 scrambled eggs, toast with butter, coffee with cream"></textarea>
+      <button type="button" class="cc-btn cc-btn--primary" id="btn-estimate">Estimate calories</button>
     </div>
-    <div class="tab-pane" id="tab-voice" role="tabpanel">
-      <div class="voice-area" id="voice-area">
-        <button class="btn-record" id="btn-record">
-          <span class="record-dot"></span> Record
-        </button>
-        <div class="transcript" id="transcript"></div>
-        <button class="btn-primary" id="btn-voice-submit" style="display:none">Log This</button>
-      </div>
+    <div class="cc-tabpane" id="tab-voice" role="tabpanel" aria-labelledby="tabbtn-voice" hidden>
+      <button type="button" class="cc-btn cc-record" id="btn-record" aria-pressed="false"><span class="cc-dot" aria-hidden="true"></span><span>Record</span></button>
+      <p class="cc-transcript" id="transcript" aria-live="polite"></p>
+      <button type="button" class="cc-btn cc-btn--primary" id="btn-voice-submit" hidden>Log this</button>
     </div>
-    <div class="tab-pane" id="tab-photo" role="tabpanel">
-      <div class="photo-area">
-        <div class="upload-zone" id="upload-zone">
-          <input type="file" id="photo-input" accept="image/*" capture="environment">
-          <div class="upload-icon">&#9681;</div>
-          <div class="upload-text"><strong>Tap to take a photo</strong> or drag an image here</div>
-        </div>
-        <div class="photo-preview" id="photo-preview"></div>
-      </div>
+    <div class="cc-tabpane" id="tab-photo" role="tabpanel" aria-labelledby="tabbtn-photo" hidden>
+      <label class="cc-upload" id="upload-zone">
+        <input type="file" id="photo-input" accept="image/*" capture="environment" class="cc-sr">
+        <span><strong>Tap to take a photo</strong> or drag an image here</span>
+      </label>
+      <div class="cc-photo-preview" id="photo-preview"></div>
     </div>
+    <div id="result-area" aria-live="polite"></div>
   </section>
 
-  <div id="result-area"></div>
-
-  <!-- ── Blood Sugar ── -->
-  <section class="bs-section">
-    <h2 class="section-header">Blood Sugar</h2>
-    <div class="bs-form">
-      <div class="field"><label>mg/dL</label><input type="number" id="bs-value" placeholder="120" min="20" max="600" step="1"></div>
-      <div class="field"><label>Context</label>
+  <section class="cc-card" aria-labelledby="bs-h" data-cc-priority="2">
+    <h2 class="cc-h2" id="bs-h">Blood sugar</h2>
+    <form class="cc-row" id="bs-form">
+      <label class="cc-field"><span class="cc-label">mg/dL</span>
+        <input type="number" id="bs-value" placeholder="120" min="20" max="600" step="1" inputmode="numeric" required></label>
+      <label class="cc-field cc-select"><span class="cc-label">Context</span>
         <select id="bs-context">
           <option value="fasting">Fasting</option>
-          <option value="before_meal">Before Meal</option>
-          <option value="after_meal" selected>After Meal</option>
+          <option value="before_meal">Before meal</option>
+          <option value="after_meal" selected>After meal</option>
           <option value="bedtime">Bedtime</option>
           <option value="other">Other</option>
-        </select>
-      </div>
-      <button class="btn-primary btn-teal" onclick="addBloodSugar()">Log Reading</button>
-    </div>
+        </select></label>
+      <button type="submit" class="cc-btn cc-btn--primary">Log reading</button>
+    </form>
     <div id="bs-readings"></div>
   </section>
 
-  <!-- ── Daily Log ── -->
-  <section class="log-section">
-    <div class="day-nav">
-      <button id="btn-prev" onclick="changeDay(-1)">&larr; Previous</button>
-      <span class="day-label" id="day-label">Today</span>
-      <button id="btn-next" onclick="changeDay(1)" disabled>Next &rarr;</button>
+  <section class="cc-card cc-span" aria-labelledby="day-h" data-cc-priority="1">
+    <div class="cc-daynav">
+      <button type="button" class="cc-btn cc-btn--quiet" id="btn-prev">&larr; Previous</button>
+      <h2 class="cc-h2 cc-daylabel" id="day-h">Today</h2>
+      <button type="button" class="cc-btn cc-btn--quiet" id="btn-next" disabled>Next &rarr;</button>
     </div>
-    <div id="log-entries"><div class="empty-state">No entries yet. Log your first meal above.</div></div>
+    <div id="log-entries"><p class="cc-empty">No entries yet. Log your first meal above.</p></div>
   </section>
 
-  <!-- ── History ── -->
-  <section class="history-section">
-    <h2 class="section-header">7-Day History</h2>
-    <div id="history-chart"></div>
+  <section class="cc-card cc-span" aria-labelledby="hist-h" data-cc-priority="3">
+    <h2 class="cc-h2" id="hist-h">7-day history</h2>
+    <div id="history-chart" role="img" aria-label="Calories per day for the last seven days"></div>
   </section>
-
-  <div class="export-bar">
-    <a class="export-link" href="/report" target="_blank">Print Report</a>
-    <a class="export-link" href="/api/export?days=30" target="_blank">Export JSON</a>
-  </div>
-
 </div>
 
-<footer class="compliance-footer">
-  Calorie & Blood Sugar Tracker &middot; Estimated by xAI Grok-3 &middot; Tufte-Tabloid Design System &middot; EB Garamond + Libre Baskerville
-</footer>
-
-<script>
-/* ── Hamburger menu ── */
-function toggleMenu(e){
-  if(e) e.stopPropagation();
-  const m=document.getElementById('mainMenu');
-  const btn=m.querySelector('.hamburger-btn');
-  const open=m.classList.toggle('open');
-  btn.setAttribute('aria-expanded',open?'true':'false');
-}
-document.addEventListener('click',function(e){
-  const m=document.getElementById('mainMenu');
-  if(m && !m.contains(e.target)){
-    m.classList.remove('open');
-    m.querySelector('.hamburger-btn').setAttribute('aria-expanded','false');
-  }
-});
-document.addEventListener('keydown',function(e){
-  if(e.key==='Escape'){
-    const m=document.getElementById('mainMenu');
-    if(m && m.classList.contains('open')){
-      m.classList.remove('open');
-      m.querySelector('.hamburger-btn').setAttribute('aria-expanded','false');
-    }
-  }
-});
-/* ── Theme + high-contrast toggles ── */
-function toggleTheme(el){
-  const t=el.checked?'dark':'light';
-  document.documentElement.setAttribute('data-theme',t);
-  try{localStorage.setItem('theme',t)}catch(_){}
-}
-function toggleHighContrast(el){
-  document.documentElement.classList.toggle('high-contrast',el.checked);
-  try{localStorage.setItem('high_contrast',el.checked?'1':'0')}catch(_){}
-}
-(function syncToggles(){
-  var tt=document.getElementById('themeToggle');
-  var hc=document.getElementById('hcToggle');
-  if(tt) tt.checked=document.documentElement.getAttribute('data-theme')==='dark';
-  if(hc) hc.checked=document.documentElement.classList.contains('high-contrast');
-})();
-
-/* ── State ── */
-let viewDate = new Date();
-const today = new Date(); today.setHours(0,0,0,0);
-function isoDate(d){return d.toISOString().slice(0,10)}
-function friendlyDate(d){const t=new Date();t.setHours(0,0,0,0);const dd=new Date(d);dd.setHours(0,0,0,0);const diff=Math.round((t-dd)/86400000);if(diff===0)return'Today';if(diff===1)return'Yesterday';return dd.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
-
-/* ── Tabs ── */
-document.querySelectorAll('.tab-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-selected','false')});
-    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-    btn.classList.add('active');btn.setAttribute('aria-selected','true');
-    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
-  });
-});
-
-/* ── Text ── */
-async function estimateText(){
-  const input=document.getElementById('food-input');const desc=input.value.trim();if(!desc)return;
-  const btn=document.getElementById('btn-estimate');btn.disabled=true;btn.textContent='Estimating...';showLoading();
-  try{
-    const resp=await fetch('/api/estimate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:desc,input_type:'text'})});
-    const data=await resp.json();if(!resp.ok)throw new Error(data.detail||'Request failed');
-    showResult(data);input.value='';refreshAll();
-  }catch(e){showError(e.message)}finally{btn.disabled=false;btn.textContent='Estimate Calories'}
-}
-document.getElementById('food-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();estimateText()}});
-
-/* ── Voice (server-side transcription via xAI Whisper) ── */
-(function(){
-  const recBtn=document.getElementById('btn-record');
-  const subBtn=document.getElementById('btn-voice-submit');
-  const transcriptEl=document.getElementById('transcript');
-  let mediaRecorder,audioChunks=[],recording=false;
-
-  recBtn.addEventListener('click',async()=>{
-    if(recording){mediaRecorder.stop();return}
-    try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-      mediaRecorder=new MediaRecorder(stream,{mimeType:'audio/webm'});
-      audioChunks=[];
-      mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
-      mediaRecorder.onstop=async()=>{
-        stream.getTracks().forEach(t=>t.stop());
-        recBtn.classList.remove('recording');recBtn.innerHTML='<span class="record-dot"></span> Record';recording=false;
-        transcriptEl.textContent='Transcribing...';
-        const blob=new Blob(audioChunks,{type:'audio/webm'});
-        const form=new FormData();form.append('audio',blob,'recording.webm');
-        try{
-          const resp=await fetch('/api/transcribe',{method:'POST',body:form});
-          const data=await resp.json();
-          if(!resp.ok)throw new Error(data.detail||'Transcription failed');
-          transcriptEl.textContent=data.text;subBtn.style.display='inline-block';
-        }catch(e){transcriptEl.textContent='Error: '+e.message}
-      };
-      mediaRecorder.start();recording=true;
-      recBtn.classList.add('recording');recBtn.innerHTML='<span class="record-dot"></span> Stop';
-      transcriptEl.textContent='Listening...';subBtn.style.display='none';
-    }catch(e){transcriptEl.textContent='Microphone access denied'}
-  });
-
-  subBtn.addEventListener('click',async()=>{
-    const text=transcriptEl.textContent.trim();if(!text)return;
-    subBtn.disabled=true;subBtn.textContent='Estimating...';showLoading();
-    try{
-      const resp=await fetch('/api/estimate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:text,input_type:'voice'})});
-      const data=await resp.json();if(!resp.ok)throw new Error(data.detail||'Request failed');
-      showResult(data);transcriptEl.textContent='';subBtn.style.display='none';refreshAll();
-    }catch(e){showError(e.message)}finally{subBtn.disabled=false;subBtn.textContent='Log This'}
-  });
-})();
-
-/* ── Photo ── */
-(function(){
-  const zone=document.getElementById('upload-zone'),input=document.getElementById('photo-input'),preview=document.getElementById('photo-preview');
-  zone.addEventListener('click',()=>input.click());
-  zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('dragover')});
-  zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));
-  zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');if(e.dataTransfer.files.length)handlePhoto(e.dataTransfer.files[0])});
-  input.addEventListener('change',()=>{if(input.files.length)handlePhoto(input.files[0])});
-  async function handlePhoto(file){
-    if(!file.type.startsWith('image/'))return;
-    const reader=new FileReader();reader.onload=e=>{preview.innerHTML=`<img src="${e.target.result}" alt="Food photo">`};reader.readAsDataURL(file);
-    showLoading();const form=new FormData();form.append('file',file);
-    try{
-      const resp=await fetch('/api/estimate-photo',{method:'POST',body:form});
-      const data=await resp.json();if(!resp.ok)throw new Error(data.detail||'Upload failed');
-      showResult(data);preview.innerHTML='';input.value='';refreshAll();
-    }catch(e){showError(e.message)}
-  }
-})();
-
-/* ── Result ── */
-function showResult(data){
-  const area=document.getElementById('result-area');
-  const items=(data.items||[]).map(it=>`<li><span><span class="item-name">${esc(it.name)}</span><span class="item-qty">${esc(it.quantity||'')}</span></span><span class="item-cal">${it.calories} cal</span></li>`).join('');
-  const macros=`<div class="result-macros">P <span>${Math.round(data.total_protein_g||0)}g</span> C <span>${Math.round(data.total_carbs_g||0)}g</span> F <span>${Math.round(data.total_fat_g||0)}g</span> Fiber <span>${Math.round(data.total_fiber_g||0)}g</span></div>`;
-  area.innerHTML=`<div class="result-card"><div class="result-header"><div class="result-total">${Math.round(data.total_calories)} <small>calories</small></div><span class="confidence-badge confidence-${data.confidence||'medium'}">${data.confidence||'medium'}</span></div><ul class="result-items">${items}</ul>${macros}${data.notes?`<div class="result-notes">${esc(data.notes)}</div>`:''}</div>`;
-  setTimeout(()=>{area.innerHTML=''},10000);
-}
-function showLoading(){document.getElementById('result-area').innerHTML='<div class="loading"><span class="spinner"></span> Analyzing food...</div>'}
-function showError(msg){document.getElementById('result-area').innerHTML=`<div class="result-card" style="border-left-color:var(--red);background:#fde8e8;"><div style="color:var(--red);font-weight:600;">Error</div><div style="margin-top:0.3rem;font-size:0.9rem;">${esc(msg)}</div></div>`}
-
-/* ── Blood Sugar ── */
-async function addBloodSugar(){
-  const val=document.getElementById('bs-value').value;if(!val)return;
-  const ctx=document.getElementById('bs-context').value;
-  try{
-    const resp=await fetch('/api/blood-sugar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:parseFloat(val),context:ctx})});
-    if(!resp.ok){const d=await resp.json();throw new Error(d.detail||'Failed')}
-    document.getElementById('bs-value').value='';refreshAll();
-  }catch(e){showError(e.message)}
-}
-async function loadBloodSugar(){
-  try{
-    const resp=await fetch('/api/blood-sugar?days=1');const readings=await resp.json();
-    renderBloodSugar(readings);
-  }catch(e){}
-}
-function renderBloodSugar(readings){
-  const el=document.getElementById('bs-readings');
-  if(!readings.length){el.innerHTML='<div class="empty-state">No readings today.</div>';return}
-  el.innerHTML=readings.map(r=>{
-    const v=r.value;const cls=v<100?'bs-normal':v<140?'bs-elevated':'bs-high';
-    const time=new Date(r.measured_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    return`<div class="bs-reading"><div><span class="bs-context">${esc(r.context)}</span><span class="bs-value ${cls}">${Math.round(v)} mg/dL</span></div><div><span class="bs-meta">${time}</span><button class="btn-delete" onclick="deleteBS('${r.id}')" title="Delete">&#x2715;</button></div></div>`;
-  }).join('');
-}
-async function deleteBS(id){try{await fetch(`/api/blood-sugar/${id}`,{method:'DELETE'});refreshAll()}catch(e){}}
-
-/* ── Log ── */
-async function loadEntries(){
-  const dateStr=isoDate(viewDate);
-  try{const resp=await fetch(`/api/entries?date_str=${dateStr}`);const entries=await resp.json();renderLog(entries)}catch(e){document.getElementById('log-entries').innerHTML='<div class="empty-state">Failed to load entries.</div>'}
-}
-function renderLog(entries){
-  const el=document.getElementById('log-entries');
-  if(!entries.length){el.innerHTML='<div class="empty-state">No entries for this day.</div>';return}
-  const groups={};const order=['breakfast','lunch','dinner','snack'];
-  entries.forEach(e=>{const m=e.meal_type||'snack';if(!groups[m])groups[m]=[];groups[m].push(e)});
-  let html='';
-  order.forEach(meal=>{
-    const list=groups[meal];if(!list)return;
-    const total=list.reduce((s,e)=>s+e.total_calories,0);
-    html+=`<div class="meal-group"><div class="meal-label">${meal} &mdash; ${Math.round(total)} cal</div>`;
-    list.forEach(e=>{
-      const time=new Date(e.created_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-      const itemStr=(e.items||[]).map(i=>`${i.name} (${i.calories})`).join(', ');
-      html+=`<div class="entry-card"><button class="btn-delete" onclick="deleteEntry('${e.id}')" title="Delete">&#x2715;</button><div class="entry-top"><div class="entry-desc"><span class="type-badge type-${e.input_type}">${e.input_type}</span>${esc(e.raw_input||'')}</div><div class="entry-cal">${Math.round(e.total_calories)}</div></div>${itemStr?`<div class="entry-items">${esc(itemStr)}</div>`:''}<div class="entry-meta">${time}<button class="btn-edit-time" onclick="editEntryTime('${e.id}','${e.created_at}')" title="Edit date &amp; time">edit</button></div></div>`;
-    });
-    html+='</div>';
-  });
-  el.innerHTML=html;
-}
-async function deleteEntry(id){try{await fetch(`/api/entries/${id}`,{method:'DELETE'});refreshAll()}catch(e){}}
-
-// Retroactively re-slot an entry into the right date/time bucket. entry_date
-// drives the reporting day; created_at drives the displayed time. Both are
-// updated atomically so the reports match what you actually ate when.
-async function editEntryTime(id,currentIso){
-  const cur=currentIso?new Date(currentIso):new Date();
-  const pad=n=>String(n).padStart(2,'0');
-  const suggested=`${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}T${pad(cur.getHours())}:${pad(cur.getMinutes())}`;
-  const input=window.prompt('Set date & time for this entry\n(YYYY-MM-DDTHH:MM local time)',suggested);
-  if(!input)return;
-  const d=new Date(input);
-  if(isNaN(d.getTime())){alert('Bad date/time — expected YYYY-MM-DDTHH:MM');return}
-  const entry_date=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  try{
-    const res=await fetch(`/api/entries/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({entry_date,created_at:d.toISOString()})});
-    if(!res.ok){const err=await res.text();alert('Update failed: '+err);return}
-    refreshAll();
-  }catch(e){alert('Update failed')}
-}
-
-function changeDay(delta){
-  viewDate.setDate(viewDate.getDate()+delta);
-  const vd=new Date(viewDate);vd.setHours(0,0,0,0);
-  document.getElementById('btn-next').disabled=(vd>=today);
-  document.getElementById('day-label').textContent=friendlyDate(viewDate);
-  loadEntries();
-}
-
-/* ── Summary ── */
-async function loadSummary(){
-  try{
-    const resp=await fetch('/api/summary');const s=await resp.json();
-    document.getElementById('kpi-today').textContent=s.today.calories?Math.round(s.today.calories).toLocaleString():'0';
-    document.getElementById('kpi-week').textContent=s.week.total?Math.round(s.week.total).toLocaleString():'0';
-    document.getElementById('kpi-avg').textContent=s.week.daily_avg?Math.round(s.week.daily_avg).toLocaleString():'0';
-    // Last blood sugar
-    if(s.blood_sugar&&s.blood_sugar.length){const last=s.blood_sugar[0];document.getElementById('kpi-bs').textContent=Math.round(last.value)}
-    else{document.getElementById('kpi-bs').textContent='--'}
-    renderHistory(s.week.days);
-  }catch(e){}
-}
-function renderHistory(days){
-  const el=document.getElementById('history-chart');
-  if(!days||!days.length){el.innerHTML='<div class="empty-state">No data yet.</div>';return}
-  const max=Math.max(...days.map(d=>d.calories),1);const todayStr=isoDate(new Date());
-  const dayMap={};days.forEach(d=>{dayMap[d.date]=d.calories});
-  const allDays=[];for(let i=6;i>=0;i--){const dd=new Date();dd.setDate(dd.getDate()-i);const ds=isoDate(dd);allDays.push({date:ds,calories:dayMap[ds]||0})}
-  el.innerHTML=allDays.map(d=>{
-    const pct=Math.round((d.calories/max)*100)||0;
-    const label=new Date(d.date+'T12:00').toLocaleDateString('en-US',{weekday:'short'});
-    const isToday=d.date===todayStr;
-    return`<div class="chart-row"><div class="chart-label">${label}</div><div class="chart-bar-wrap"><div class="chart-bar${isToday?' today':''}" style="width:${pct}%"></div></div><div class="chart-val">${d.calories?Math.round(d.calories).toLocaleString():'&mdash;'}</div></div>`;
-  }).join('');
-}
-function refreshAll(){loadEntries();loadSummary();loadBloodSugar()}
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-refreshAll();
-</script>
-</body>
-</html>
+<dialog class="cc-dialog" id="time-dialog" aria-labelledby="time-dialog-h">
+  <form method="dialog" class="cc-stack">
+    <h2 class="cc-h2" id="time-dialog-h">Set date &amp; time</h2>
+    <label class="cc-field"><span class="cc-label">When did you eat this?</span>
+      <input type="datetime-local" id="time-input" required></label>
+    <div class="cc-row">
+      <button type="submit" value="save" class="cc-btn cc-btn--primary">Save</button>
+      <button type="submit" value="cancel" class="cc-btn" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}<script src="/static/tracker.js?v=20261123" defer></script>{% endblock %}

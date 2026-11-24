@@ -1,4 +1,7 @@
-"""Calorie & Blood Sugar Tracker — text, voice, photo input via xAI Grok."""
+"""Calorie & Blood Sugar Tracker (Meals) — text, voice, photo input.
+
+Renders inside the Gudmundr DDUUI shell + chrome and signs in through
+Gudmundr Gateway. LLM calls route through the Gateway proxy (llm.py)."""
 
 import os
 import io
@@ -15,8 +18,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Redirect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from jinja2 import Environment, FileSystemLoader
-import openai as _openai
+import llm
 import uvicorn
 
 from auth import oauth, setup_oauth, is_oauth_configured, BASE_URL
@@ -24,16 +28,6 @@ import gateway_auth
 import gateway_access
 
 GATEWAY_APP_ID = "calorie_counter"
-
-# Nav v2 · Phase 3 · S2 · 2026-09-25 — import-time side effect runs
-# migration + baseline seed on cold boot (mirrors bp-demo pattern).
-import nav_bootstrap  # noqa: F401
-try:
-    from nav_resolver import slots_for_request
-except Exception as _nav_e:
-    slots_for_request = None
-    print(f"[nav-v2] slots_for_request import FAILED: {type(_nav_e).__name__}: {_nav_e}", flush=True)
-
 
 # ── Config ──────────────────────────────────────────────────────────────
 
@@ -51,58 +45,77 @@ DEPLOY_MODE = os.environ.get("DEPLOY_MODE", "local")
 FA_BASE_URL = os.environ.get("FA_BASE_URL", "https://family-alignment-production-d237.up.railway.app").rstrip("/")
 FA_SYNC_TOKEN = os.environ.get("FA_SYNC_TOKEN", "")
 
-XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
-XAI_BASE = "https://api.x.ai/v1"
-XAI_TEXT_MODEL = "grok-3"
-XAI_VISION_MODEL = "grok-2-vision-1212"
-XAI_WHISPER_MODEL = "whisper-large-v3"
 
 app = FastAPI(title="Calorie & Blood Sugar Tracker", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+
+
+async def _auth_gate(request: Request, call_next):
+    """Deny-by-default: unauthenticated page hits redirect to /login, API
+    hits get 401. Added before SessionMiddleware, so the session middleware
+    is the outer layer and request.session is populated here."""
+    path = request.url.path
+    if not _is_public(path) and not path.startswith(_BEARER_PREFIXES):
+        if not _current_user(request):
+            if path.startswith("/api/") or request.headers.get("accept", "").startswith("application/json"):
+                return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+            return RedirectResponse("/login", status_code=303)
+    resp = await call_next(request)
+    if path.startswith("/auth/") or path == "/login":
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Referrer-Policy"] = "no-referrer"
+    return resp
+
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=_auth_gate)
+app.add_middleware(
+    SessionMiddleware, secret_key=SECRET_KEY, same_site="lax",
+    https_only=(DEPLOY_MODE == "railway"), max_age=14 * 24 * 3600,
+)
 
 _jinja = Environment(loader=FileSystemLoader(str(APP_DIR / "templates")), autoescape=True)
 
 
-# Nav v2 · Phase 3 · S2 helpers ─────────────────────────────────────────
-
-def _pick_template(request: Request, default_name: str) -> str:
-    """Nav v2·4/5 · route base template by ?embed=1 / ?sidecar=1.
-    Precedence: embed > sidecar > default. Callers pick their own default."""
-    qp = request.query_params
-    if qp.get("embed") == "1":
-        return "base_embed.html"
-    if qp.get("sidecar") == "1":
-        return "base_sidecar_slave.html"
-    return default_name
-
-
-def _nav_ctx(request: Request) -> dict:
-    """Return the nav v2 context slice (nav_slots + _base_template).
-    Merge into every render(). Fail-safe: empty dict on resolver failure."""
-    try:
-        nav_slots = slots_for_request(request) if slots_for_request else {}
-    except Exception as _e:
-        print(f"[nav-v2] slots_for_request FAILED: {type(_e).__name__}: {_e}", flush=True)
-        nav_slots = {}
-    return {
-        "nav_slots": nav_slots,
-        "_base_template": _pick_template(request, "base.html"),
-    }
-
-
 # ── Auth helpers ────────────────────────────────────────────────────────
+# Every page and API requires a signed-in user (/healthz, /health, the
+# sign-in routes and /static excepted). Sign-in is Gudmundr Gateway SSO;
+# the local PIN (CC_FALLBACK_PIN, unset = disabled) and the legacy Google
+# button are documented fallbacks only. There is no anonymous/dev bypass.
 
-_PUBLIC_PATHS = {"/login", "/logout", "/health", "/healthz", "/favicon.ico"}
-_PUBLIC_PREFIXES = ("/auth/", "/health", "/static/")
+_PUBLIC_PATHS = {"/login", "/logout", "/health", "/healthz", "/favicon.ico", "/login/gateway"}
+_PUBLIC_PREFIXES = ("/auth/", "/static/")
+# Service endpoints authenticate with the FA_SYNC_TOKEN bearer in the handler.
+_BEARER_PREFIXES = ("/api/admin/",)
+
+CC_FALLBACK_PIN = os.environ.get("CC_FALLBACK_PIN", "").strip()
+
+
+def _is_public(path: str) -> bool:
+    return path in _PUBLIC_PATHS or any(path.startswith(p) for p in _PUBLIC_PREFIXES)
+
+
+def _email_allowed(email: str) -> bool:
+    """App-side allow-list: ADMIN_EMAILS, or listed in allowed_emails, or the
+    table is empty (open access, the original Google-callback rule)."""
+    addr = (email or "").strip().lower()
+    if not addr:
+        return False
+    if addr in ADMIN_EMAILS:
+        return True
+    conn = get_db()
+    try:
+        count = conn.execute("SELECT COUNT(*) AS c FROM allowed_emails").fetchone()["c"]
+        if count == 0:
+            return True
+        return conn.execute("SELECT 1 FROM allowed_emails WHERE email=? COLLATE NOCASE", (addr,)).fetchone() is not None
+    finally:
+        conn.close()
 
 
 def _current_user(request: Request) -> dict | None:
     email = request.session.get("user_email")
     if not email:
-        if not is_oauth_configured() or "localhost" in BASE_URL or "127.0.0.1" in BASE_URL:
-            return {"email": "local@dev", "name": "Local Dev", "picture_url": None}
         return None
     if request.session.get("gw_access"):
         # Gateway v1 session: the Gateway's per-app access list is the
@@ -110,7 +123,6 @@ def _current_user(request: Request) -> dict | None:
         if not gateway_access.still_allowed(email, GATEWAY_APP_ID):
             request.session.clear()
             return None
-    # Verify against allowed list
     elif ADMIN_EMAILS and email.lower() not in ADMIN_EMAILS:
         conn = get_db()
         row = conn.execute("SELECT id FROM allowed_emails WHERE email=? COLLATE NOCASE", (email,)).fetchone()
@@ -122,6 +134,7 @@ def _current_user(request: Request) -> dict | None:
         "email": email,
         "name": request.session.get("user_name", email),
         "picture_url": request.session.get("user_picture"),
+        "idp": request.session.get("idp", "google"),
     }
 
 
@@ -189,6 +202,18 @@ def init_db():
             email TEXT NOT NULL UNIQUE COLLATE NOCASE,
             created_at TEXT DEFAULT (datetime('now'))
         );
+
+        -- Gateway SSO migration (2026-11-23): one row per Gateway subject.
+        -- Meal / blood-sugar / journal rows stay keyed by email, so history
+        -- carries over; `email` is the address the existing rows use.
+        CREATE TABLE IF NOT EXISTS gateway_subjects (
+            sub        TEXT PRIMARY KEY,
+            email      TEXT NOT NULL COLLATE NOCASE,
+            name       TEXT,
+            first_seen TEXT NOT NULL,
+            last_seen  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_gw_subjects_email ON gateway_subjects(email);
 
         CREATE TABLE IF NOT EXISTS journal_entries (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,13 +306,7 @@ def init_db():
 init_db()
 
 
-# ── xAI Grok client ────────────────────────────────────────────────────
-
-def _xai_client():
-    if not XAI_API_KEY:
-        return None
-    return _openai.OpenAI(api_key=XAI_API_KEY, base_url=XAI_BASE)
-
+# ── LLM (Gateway-routed · see llm.py) ─────────────────────────────────
 
 CALORIE_SYSTEM = """You are a certified sports nutritionist with expertise in food portion estimation.
 Analyze the food described and provide a detailed calorie breakdown.
@@ -332,12 +351,19 @@ def _guess_meal() -> str:
 
 
 def _parse_response(text: str) -> dict:
-    t = text.strip()
+    t = (text or "").strip()
     if t.startswith("```"):
         t = t.split("\n", 1)[1]
     if t.endswith("```"):
         t = t[:-3].strip()
-    return json.loads(t)
+    try:
+        return json.loads(t)
+    except json.JSONDecodeError:
+        # Some chain models wrap the JSON in prose; take the outermost object.
+        a, b = t.find("{"), t.rfind("}")
+        if a >= 0 and b > a:
+            return json.loads(t[a:b + 1])
+        raise
 
 
 def _error_result(msg: str) -> dict:
@@ -347,57 +373,37 @@ def _error_result(msg: str) -> dict:
 
 
 def estimate_text(description: str) -> dict:
-    client = _xai_client()
-    if not client:
-        return _error_result("AI estimation requires XAI_API_KEY")
     try:
-        resp = client.chat.completions.create(
-            model=XAI_TEXT_MODEL, max_tokens=2048, temperature=0.2,
-            messages=[
-                {"role": "system", "content": CALORIE_SYSTEM},
-                {"role": "user", "content": f"{_time_context()}\n\nFood: {description}"},
-            ],
-        )
-        return _parse_response(resp.choices[0].message.content)
+        text, _route = llm.chat([
+            {"role": "system", "content": CALORIE_SYSTEM},
+            {"role": "user", "content": f"{_time_context()}\n\nFood: {description}"},
+        ], max_tokens=2048)
+        return _parse_response(text)
     except Exception as e:
-        return _error_result(f"Estimation error: {e}")
+        return _error_result(f"Estimation error: {type(e).__name__}")
 
 
 def estimate_photo(image_data: bytes, media_type: str) -> dict:
-    client = _xai_client()
-    if not client:
-        return _error_result("Photo analysis requires XAI_API_KEY")
     try:
         b64 = base64.standard_b64encode(image_data).decode()
         image_url = f"data:{media_type};base64,{b64}"
-        resp = client.chat.completions.create(
-            model=XAI_VISION_MODEL, max_tokens=2048, temperature=0.2,
-            messages=[
-                {"role": "system", "content": CALORIE_SYSTEM},
-                {"role": "user", "content": [
-                    {"type": "image_url", "image_url": {"url": image_url}},
-                    {"type": "text", "text": f"{_time_context()}\n\nIdentify all food items in this photo. Estimate portion sizes visually and calculate calories with macronutrient breakdown."},
-                ]},
-            ],
-        )
-        return _parse_response(resp.choices[0].message.content)
+        text, _route = llm.chat([
+            {"role": "system", "content": CALORIE_SYSTEM},
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": image_url}},
+                {"type": "text", "text": f"{_time_context()}\n\nIdentify all food items in this photo. Estimate portion sizes visually and calculate calories with macronutrient breakdown."},
+            ]},
+        ], vision=True, max_tokens=2048)
+        return _parse_response(text)
     except Exception as e:
-        return _error_result(f"Photo analysis error: {e}")
+        return _error_result(f"Photo analysis error: {type(e).__name__}")
 
 
 def transcribe_audio(audio_data: bytes, filename: str = "audio.webm") -> str:
-    client = _xai_client()
-    if not client:
-        return ""
     try:
-        audio_file = io.BytesIO(audio_data)
-        audio_file.name = filename
-        transcript = client.audio.transcriptions.create(
-            model=XAI_WHISPER_MODEL, file=audio_file,
-        )
-        return transcript.text
+        return llm.transcribe(audio_data, filename)
     except Exception as e:
-        print(f"[xAI] transcription error: {e}")
+        print(f"[llm] transcription error: {type(e).__name__}")
         return ""
 
 
@@ -599,14 +605,74 @@ def _start_outbound_flusher(interval_seconds: int = 30) -> None:
     threading.Thread(target=_loop, daemon=True, name="outbound_flusher").start()
 
 
+def _render(request: Request, name: str, **ctx) -> HTMLResponse:
+    user = ctx.pop("user", None)
+    if user is None:
+        user = _current_user(request)
+    tpl = _jinja.get_template(name)
+    return HTMLResponse(tpl.render(
+        user=user,
+        gateway_url=gateway_auth.GATEWAY_URL or "https://gateway.gudmundr.com",
+        ai=llm.status(),
+        **ctx,
+    ))
+
+
+def _canonical_email(addr: str) -> str:
+    """The address existing rows use for this person (case-insensitive), so a
+    Gateway sign-in keeps the meal, blood-sugar and journal history."""
+    conn = get_db()
+    try:
+        for sql in (
+            "SELECT user_email FROM entries WHERE user_email=? COLLATE NOCASE ORDER BY created_at LIMIT 1",
+            "SELECT user_email FROM blood_sugar WHERE user_email=? COLLATE NOCASE ORDER BY created_at LIMIT 1",
+            "SELECT email FROM gateway_subjects WHERE email=? COLLATE NOCASE LIMIT 1",
+        ):
+            row = conn.execute(sql, (addr,)).fetchone()
+            if row and row[0]:
+                return row[0]
+    finally:
+        conn.close()
+    return addr
+
+
+def _record_gateway_subject(sub: str, email: str, name: str) -> None:
+    now = datetime.now().isoformat()
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO gateway_subjects (sub, email, name, first_seen, last_seen) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(sub) DO UPDATE SET email=excluded.email, name=excluded.name, last_seen=excluded.last_seen",
+            (sub, email, name, now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+_LOGIN_ERRORS = {
+    "not_allowed": "This account does not have access to Meals. Ask the Gudmundr admin to grant it.",
+    "gateway_failed": "Gudmundr sign-in could not be verified. Please try again.",
+    "gateway_not_configured": "Gudmundr Gateway sign-in is not configured on this instance.",
+    "oauth_failed": "Google sign-in failed. Please use Sign in with Gudmundr.",
+    "oauth_not_configured": "Google sign-in is not configured on this instance.",
+    "pin_failed": "That email and PIN did not match.",
+    "pin_locked": "Too many attempts. Wait a minute and try again.",
+}
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    user = _current_user(request)
-    if user:
+    if _current_user(request):
         return RedirectResponse("/", status_code=303)
-    error = request.query_params.get("error", "")
-    tpl = _jinja.get_template(_pick_template(request, "login.html"))
-    return HTMLResponse(tpl.render(error=error, oauth_configured=is_oauth_configured(), gateway_configured=gateway_auth.is_gateway_configured(), **_nav_ctx(request)))
+    code = request.query_params.get("error", "")
+    return _render(
+        request, "login.html", user=False,
+        error=_LOGIN_ERRORS.get(code, "Sign-in failed. Please try again." if code else ""),
+        oauth_configured=is_oauth_configured(),
+        gateway_configured=gateway_auth.is_gateway_configured(),
+        pin_enabled=bool(CC_FALLBACK_PIN),
+    )
 
 
 @app.get("/auth/google/login")
@@ -625,33 +691,23 @@ async def google_callback(request: Request):
         token = await oauth.google.authorize_access_token(request)
     except Exception:
         return RedirectResponse("/login?error=oauth_failed", status_code=303)
-
     userinfo = token.get("userinfo", {})
     email = userinfo.get("email", "")
     if not email:
         return RedirectResponse("/login?error=oauth_failed", status_code=303)
-
-    # Check whitelist — allow if table is empty (open access) or email is listed
-    conn = get_db()
-    count = conn.execute("SELECT COUNT(*) as c FROM allowed_emails").fetchone()["c"]
-    if count > 0:
-        allowed = conn.execute("SELECT id FROM allowed_emails WHERE email=? COLLATE NOCASE", (email,)).fetchone()
-        if not allowed:
-            conn.close()
-            return RedirectResponse("/login?error=not_allowed", status_code=303)
-    conn.close()
-
-    request.session["user_email"] = email
+    if not _email_allowed(email):
+        return RedirectResponse("/login?error=not_allowed", status_code=303)
+    request.session.clear()
+    request.session["user_email"] = _canonical_email(email)
     request.session["user_name"] = userinfo.get("name", email)
     request.session["user_picture"] = userinfo.get("picture", "")
+    request.session["idp"] = "google"
     return RedirectResponse("/", status_code=303)
 
 
 # ── Gudmundr Gateway SSO (primary ecosystem sign-in) ──────────────────
-# The Google button builds its callback from BASE_URL (the Railway host),
-# so a sign-in started on meals.gudmundr.com lost its OAuth state cookie
-# and ended at /login?error=oauth_failed. Gateway SSO builds the callback
-# from the host the browser is on.
+# The callback URL is built from the host the browser is on, so it matches
+# the Gateway redirect allow-list (*.gudmundr.com) and the CSRF state cookie.
 
 @app.get("/login/gateway")
 async def login_gateway(request: Request):
@@ -670,72 +726,152 @@ async def auth_gateway_callback(request: Request, token: str = "", state: str = 
         return RedirectResponse("/login?error=gateway_not_configured", status_code=303)
     if not gateway_auth.check_state(request, state):
         return RedirectResponse("/login?error=gateway_failed", status_code=303)
-    claims, _detail = gateway_auth.fetch_userinfo(token)
+    claims, detail = gateway_auth.verify_or_userinfo(token)
     if not claims:
+        print(f"[gateway-sso] rejected: {detail}", flush=True)
         return RedirectResponse("/login?error=gateway_failed", status_code=303)
     addr = claims["email"].strip()
     verdict, access = gateway_access.evaluate(claims, GATEWAY_APP_ID)
     if verdict == "denied":
         return RedirectResponse("/login?error=not_allowed", status_code=303)
-    if verdict == "legacy":
-        # Pre-v1 token (transition only): same allow-list rule as the Google
-        # callback · open when the table is empty, otherwise listed or admin.
-        conn = get_db()
-        try:
-            count = conn.execute("SELECT COUNT(*) as c FROM allowed_emails").fetchone()["c"]
-            if count > 0 and addr.lower() not in ADMIN_EMAILS:
-                allowed = conn.execute(
-                    "SELECT id FROM allowed_emails WHERE email=? COLLATE NOCASE", (addr,)
-                ).fetchone()
-                if not allowed:
-                    return RedirectResponse("/login?error=not_allowed", status_code=303)
-        finally:
-            conn.close()
+    if verdict == "legacy" and not _email_allowed(addr):
+        # Gateway not yet authoritative for this app: same allow-list rule as
+        # the original Google callback (open when empty, else listed/admin).
+        return RedirectResponse("/login?error=not_allowed", status_code=303)
+    email = _canonical_email(addr)
+    _record_gateway_subject(str(claims.get("sub") or ""), email, claims.get("name") or addr)
+    request.session.clear()
     request.session["gw_access"] = access or ""
-    request.session["user_email"] = addr
+    request.session["gw_sub"] = str(claims.get("sub") or "")
+    request.session["user_email"] = email
     request.session["user_name"] = claims.get("name") or addr
     request.session["user_picture"] = claims.get("picture") or ""
     request.session["idp"] = "gateway"
+    # Per-user ecosystem catalog (/api/ecosystem/my-apps) is fetched
+    # server-side with this token; it never reaches the page or a URL.
+    request.session["gw_token"] = token
+    request.session["gw_token_exp"] = int(claims.get("exp") or 0)
     return RedirectResponse("/", status_code=303)
+
+
+# ── Local PIN fallback (documented · disabled unless CC_FALLBACK_PIN set) ──
+_pin_attempts: dict[str, list[float]] = {}
+
+
+@app.post("/auth/pin")
+async def auth_pin(request: Request, email: str = Form(""), pin: str = Form("")):
+    import time as _time
+    if not CC_FALLBACK_PIN:
+        return RedirectResponse("/login", status_code=303)
+    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "")).split(",")[0].strip()
+    now = _time.time()
+    recent = [t for t in _pin_attempts.get(ip, []) if now - t < 60]
+    if len(recent) >= 5:
+        _pin_attempts[ip] = recent
+        return RedirectResponse("/login?error=pin_locked", status_code=303)
+    recent.append(now)
+    _pin_attempts[ip] = recent
+    addr = (email or "").strip()
+    ok = secrets.compare_digest(pin.strip().encode(), CC_FALLBACK_PIN.encode()) and addr and (
+        addr.lower() in ADMIN_EMAILS or _email_listed(addr))
+    if not ok:
+        return RedirectResponse("/login?error=pin_failed", status_code=303)
+    request.session.clear()
+    request.session["user_email"] = _canonical_email(addr)
+    request.session["user_name"] = addr
+    request.session["idp"] = "pin"
+    return RedirectResponse("/", status_code=303)
+
+
+def _email_listed(addr: str) -> bool:
+    conn = get_db()
+    try:
+        return conn.execute("SELECT 1 FROM allowed_emails WHERE email=? COLLATE NOCASE", (addr,)).fetchone() is not None
+    finally:
+        conn.close()
 
 
 @app.get("/logout")
 async def logout(request: Request):
+    idp = request.session.get("idp")
     request.session.clear()
+    if idp == "gateway" and gateway_auth.is_gateway_configured():
+        back = gateway_auth.public_origin(request, BASE_URL) + "/login"
+        return RedirectResponse(gateway_auth.gateway_logout_url(back), status_code=303)
     return RedirectResponse("/login", status_code=303)
+
+
+@app.post("/api/logout")
+async def api_logout(request: Request):
+    idp = request.session.get("idp")
+    request.session.clear()
+    out = {"ok": True}
+    if idp == "gateway" and gateway_auth.is_gateway_configured():
+        out["gateway_logout"] = gateway_auth.gateway_logout_url(gateway_auth.public_origin(request, BASE_URL) + "/login")
+    return out
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True}
+
+
+@app.get("/api/me")
+async def api_me(request: Request):
+    user = _require_auth(request)
+    return {"email": user["email"], "name": user["name"], "idp": user["idp"], "ai": llm.status()}
+
+
+@app.get("/api/ecosystem/my-apps")
+async def api_my_apps(request: Request):
+    """Same-origin proxy of the per-user Gateway catalog (pilot 592).
+
+    Uses the signed-in user's Gateway token (kept server-side in the session)
+    so the Gateway filters the list to apps this person may see. Without a
+    live token (PIN / Google fallback sessions) it asks as the service with
+    X-Gateway-User when GATEWAY_SERVICE_TOKEN is set, else anonymously."""
+    import time as _time
+    import urllib.request as _ur
+    user = _require_auth(request)
+    url = f"{gateway_auth.GATEWAY_URL}/svc/ecosystem/apps?status=live,beta"
+    headers = {"Accept": "application/json"}
+    tok = request.session.get("gw_token")
+    if tok and int(request.session.get("gw_token_exp") or 0) > _time.time() + 30:
+        headers["Authorization"] = f"Bearer {tok}"
+    elif os.environ.get("GATEWAY_SERVICE_TOKEN", "").strip():
+        headers["Authorization"] = "Bearer " + os.environ["GATEWAY_SERVICE_TOKEN"].strip()
+        headers["X-Gateway-User"] = user["email"]
+    try:
+        with _ur.urlopen(_ur.Request(url, headers=headers), timeout=8) as r:
+            body = json.loads(r.read().decode("utf-8"))
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"items": [], "error": f"catalog_unavailable:{type(e).__name__}"}, status_code=502)
+    return JSONResponse(body, headers={"Cache-Control": "private, max-age=60"})
 
 
 # ── Routes: Pages ───────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    path = request.url.path
-    if path not in _PUBLIC_PATHS and not any(path.startswith(p) for p in _PUBLIC_PREFIXES):
-        user = _current_user(request)
-        if not user:
-            return RedirectResponse("/login", status_code=303)
-    tpl = _jinja.get_template(_pick_template(request, "index.html"))
-    user = _current_user(request) or {}
-    return HTMLResponse(tpl.render(user=user, **_nav_ctx(request)))
+    return _render(request, "index.html", page="tracker")
+
+
+@app.get("/help", response_class=HTMLResponse)
+async def help_page(request: Request):
+    return _render(request, "help.html", page="help")
 
 
 @app.get("/report", response_class=HTMLResponse)
 async def report_page(request: Request):
-    user = _current_user(request)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
-    tpl = _jinja.get_template(_pick_template(request, "report.html"))
-    return HTMLResponse(tpl.render(user=user, **_nav_ctx(request)))
+    return _render(request, "report.html", page="report")
 
 
 @app.get("/journal", response_class=HTMLResponse)
 async def journal_page(request: Request):
-    user = _current_user(request)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = _require_auth(request)
     conn = get_db()
     rows = conn.execute(
-        """SELECT je.entry_date, je.content, je.mood, je.tags
+        """SELECT je.id, je.entry_date, je.content, je.mood, je.tags
            FROM journal_entries je
            JOIN journal_entry_email jee ON jee.journal_id = je.id
            WHERE jee.email = ? COLLATE NOCASE
@@ -743,8 +879,7 @@ async def journal_page(request: Request):
         (user["email"],),
     ).fetchall()
     conn.close()
-    tpl = _jinja.get_template(_pick_template(request, "journal.html"))
-    return HTMLResponse(tpl.render(user=user, entries=[dict(r) for r in rows], **_nav_ctx(request)))
+    return _render(request, "journal.html", user=user, page="journal", entries=[dict(r) for r in rows])
 
 
 # ── Routes: Calorie API ────────────────────────────────────────────────
@@ -767,7 +902,7 @@ async def api_transcribe(request: Request, audio: UploadFile = File(...)):
     data = await audio.read()
     text = transcribe_audio(data, audio.filename or "audio.webm")
     if not text:
-        raise HTTPException(500, "Transcription failed — check XAI_API_KEY")
+        raise HTTPException(500, "Transcription failed or is not configured")
     return {"text": text}
 
 
@@ -1029,7 +1164,7 @@ async def api_export(request: Request, days: int = 30):
     return {
         "metadata": {
             "generated_at": datetime.now().isoformat(),
-            "model": "xAI Grok-3",
+            "model": llm.status()["text_model"],
             "export_days": days,
             "total_entries": len(rows),
             "total_blood_sugar": len(bs),
@@ -1040,9 +1175,17 @@ async def api_export(request: Request, days: int = 30):
 
 
 @app.get("/api/photo/{filename}")
-async def api_photo(filename: str):
+async def api_photo(filename: str, request: Request):
+    user = _require_auth(request)
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(404, "Photo not found")
+    conn = get_db()
+    owned = conn.execute(
+        "SELECT 1 FROM entries WHERE photo_filename=? AND user_email=?", (filename, user["email"])
+    ).fetchone()
+    conn.close()
     p = UPLOAD_DIR / filename
-    if not p.exists():
+    if not owned or not p.exists():
         raise HTTPException(404, "Photo not found")
     return FileResponse(str(p))
 
@@ -1468,13 +1611,8 @@ async def health():
 
 @app.get("/search", response_class=HTMLResponse)
 async def search_universal(request: Request, q: str = "", format: str = "html", limit: int = 50):
-    import html as _html_s
     import json as _json_s
-    from urllib.parse import quote as _quote_s
-    user = _current_user(request)
-    if not user:
-        next_url = f"/search?q={_quote_s(q)}" if q else "/search"
-        return RedirectResponse(f"/login?next={_quote_s(next_url)}", status_code=303)
+    user = _require_auth(request)
 
     q = (q or "").strip()
     limit = max(1, min(limit, 200))
@@ -1518,9 +1656,6 @@ async def search_universal(request: Request, q: str = "", format: str = "html", 
             "results": results,
         })
 
-    def esc(s: str) -> str:
-        return _html_s.escape(s or "", quote=True)
-
     def meal_items_preview(items_json: str) -> str:
         try:
             arr = _json_s.loads(items_json or "[]")
@@ -1529,64 +1664,9 @@ async def search_universal(request: Request, q: str = "", format: str = "html", 
         except Exception:
             return ""
 
-    meal_rows = "".join(
-        f'<li><a href="/?date={esc(r["entry_date"])}"><strong>{esc(r["entry_date"])}</strong></a>'
-        f' <span class="meta">· {esc(r.get("meal_type") or "meal")} · {int(r.get("total_calories") or 0)} kcal</span>'
-        f'<div class="excerpt">{esc(r.get("raw_input") or meal_items_preview(r.get("items")))}'
-        f'{" · " + esc(r.get("notes")) if r.get("notes") else ""}</div></li>'
-        for r in results["meals"]
-    )
-    bs_rows = "".join(
-        f'<li><a href="/?date={esc(r["entry_date"])}">{esc(r["entry_date"])}</a>'
-        f' <span class="meta">· {r.get("value")} {esc(r.get("unit") or "")} · {esc(r.get("context") or "")}'
-        f'{" · " + esc(r.get("notes")) if r.get("notes") else ""}</span></li>'
-        for r in results["blood_sugar"]
-    )
-    jr_rows = "".join(
-        f'<li><a href="/journal#entry-{r["id"]}">{esc(r["entry_date"])}</a>'
-        f' <span class="meta">· {esc(r.get("source") or "")}{" · " + esc(r.get("mood")) if r.get("mood") else ""}{" · " + esc(r.get("tags")) if r.get("tags") else ""}</span>'
-        f'<div class="excerpt">{esc((r.get("content") or "")[:300])}</div></li>'
-        for r in results["journal"]
-    )
-
-    empty = ""
-    if q and total == 0:
-        empty = f'<p class="empty">No matches for "{esc(q)}".</p>'
-    elif not q:
-        empty = '<p class="empty">Search across your meals, blood-sugar readings, and journal entries.</p>'
-
-    page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Search · Calorie Counter</title><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  body {{ font: 15px/1.5 system-ui,-apple-system,sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #111; background: #fff; }}
-  @media (prefers-color-scheme: dark) {{ body {{ color: #eee; background: #111; }} a {{ color: #9ec5ff; }} }}
-  h1 {{ font-size: 1.4rem; margin: 0 0 1rem; }}
-  h2 {{ font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: #666; margin: 1.25rem 0 .5rem; }}
-  form {{ display: flex; gap: .5rem; margin-bottom: 1rem; }}
-  input[type=search] {{ flex: 1; padding: .55rem .7rem; font-size: 1rem; border: 1px solid #999; background: inherit; color: inherit; }}
-  button {{ padding: .55rem 1.1rem; cursor: pointer; }}
-  ul {{ list-style: none; padding: 0; margin: 0; }}
-  li {{ padding: .5rem 0; border-bottom: 1px dotted #ccc; }}
-  .meta {{ color: #777; font-size: .85rem; margin-left: .3rem; }}
-  .excerpt {{ color: #555; font-size: .9rem; margin-top: 3px; }}
-  .meta-bar {{ color: #666; font-size: .88rem; margin: .5rem 0; }}
-  .empty {{ color: #888; font-style: italic; padding: 2rem 0; text-align: center; }}
-  footer {{ margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; font-size: .82rem; color: #666; }}
-  footer a {{ color: inherit; }}
-</style></head><body>
-  <h1>Search · Calorie Counter</h1>
-  <form method="get" action="/search">
-    <input type="search" name="q" value="{esc(q)}" placeholder="Food, meal type, notes, mood, tag…" autofocus>
-    <button type="submit">Search</button>
-  </form>
-  {('<div class="meta-bar">' + str(total) + ' result' + ('' if total == 1 else 's') + ' for <strong>' + esc(q) + '</strong> · <a href="/search?q=' + esc(q) + '&amp;format=json" target="_blank" rel="noopener">JSON</a></div>') if q else ''}
-  {('<h2>Meals (' + str(len(results["meals"])) + ')</h2><ul>' + meal_rows + '</ul>') if results["meals"] else ''}
-  {('<h2>Blood sugar (' + str(len(results["blood_sugar"])) + ')</h2><ul>' + bs_rows + '</ul>') if results["blood_sugar"] else ''}
-  {('<h2>Journal (' + str(len(results["journal"])) + ')</h2><ul>' + jr_rows + '</ul>') if results["journal"] else ''}
-  {empty}
-  <footer><a href="/">Calorie Counter home</a> · <a href="/journal">Journal</a> · <a href="/report">Report</a></footer>
-</body></html>"""
-    return HTMLResponse(page)
+    for r in results["meals"]:
+        r["preview"] = r.get("raw_input") or meal_items_preview(r.get("items"))
+    return _render(request, "search.html", user=user, page="search", q=q, total=total, results=results)
 
 
 # ── Main ────────────────────────────────────────────────────────────────

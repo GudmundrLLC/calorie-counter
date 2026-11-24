@@ -1,64 +1,30 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#385E3F">
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<title>Sign In — Calorie Counter</title>
-<script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);if(localStorage.getItem("high_contrast")==="1"){document.documentElement.classList.add("high-contrast")}}catch(_){}})();</script>
-<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
-<style>
-:root { --brand:#502379; --ink:#1a1a1a; --ink-light:#666; --page:#fefcf8; --cream:#f8f6f2; --rule-light:#e4e4e4; --red:#c0392b; }
-[data-theme="dark"]{--brand:#a78bfa;--ink:#e8e6f0;--ink-light:#9089a5;--page:#1e1832;--cream:#1a1428;--rule-light:#3a3348;--red:#f87171}
-.high-contrast,.high-contrast[data-theme="dark"]{--brand:#000;--ink:#000;--ink-light:#111;--page:#fff;--cream:#fff;--rule-light:#666;--red:#8b0000}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'EB Garamond',Georgia,serif;background:var(--cream);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center}
-.login-card{background:var(--page);border:1px solid var(--rule-light);border-radius:6px;padding:3rem 2.5rem;max-width:380px;width:100%;text-align:center}
-h1{font-size:2rem;font-weight:400;letter-spacing:-0.02em;margin-bottom:0.3rem}
-.subtitle{font-family:'Libre Baskerville',Georgia,serif;font-size:0.8rem;color:var(--ink-light);margin-bottom:2rem}
-.btn-google{display:inline-flex;align-items:center;gap:0.6rem;font-family:'Libre Baskerville',Georgia,serif;font-size:0.82rem;font-weight:700;color:#fff;background:var(--brand);border:none;border-radius:4px;padding:0.75rem 1.8rem;cursor:pointer;text-decoration:none;transition:background 0.2s}
-.btn-google:hover{background:#6b2f9e}
-.btn-google svg{width:18px;height:18px}
-.error{color:var(--red);font-size:0.85rem;margin-bottom:1rem}
-.note{font-size:0.75rem;color:var(--ink-light);margin-top:1.5rem}
-</style>
-    <!-- ECOSYSTEM_SIDECAR_WIRING_v2 · bp-demo cross-app sidecar (2026-09-24) -->
-    <script>
-      (function(){
-        var qs = new URLSearchParams(window.location.search);
-        if (qs.get('sidecar') === '1') document.documentElement.setAttribute('data-sidecar', '1');
-        var t = qs.get('theme'); if (t) document.documentElement.setAttribute('data-theme', t);
-        var hc = qs.get('hc');    if (hc !== null) document.documentElement.setAttribute('data-hc', hc);
-        var d = qs.get('d');      if (d) document.documentElement.setAttribute('data-density', d);
-      })();
-    </script>
-    <script src="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-bridge.js?v=2"></script>
-    <link rel="stylesheet" href="https://friendly-possibility-production-bb39.up.railway.app/static/ecosystem-sidecar.css?v=2">
-</head>
-<body>
-{# Nav v2 · shared drawer primitive (no visible chip strip on login — auth gate) #}
-{% include 'partials/right_drawer.html' ignore missing %}
-<div class="login-card">
-  <h1>Calorie Counter</h1>
-  <p class="subtitle">Track what you eat. Know what you need.</p>
-  {% if error == 'not_allowed' %}<p class="error">Your email is not on the allowed list.</p>
-  {% elif error == 'oauth_failed' %}<p class="error">Google sign-in failed. Please try again.</p>
-  {% elif error == 'gateway_failed' %}<p class="error">Gudmundr sign-in failed. Please try again.</p>
-  {% elif error == 'oauth_not_configured' %}<p class="error">OAuth is not configured on this instance.</p>
-  {% elif error %}<p class="error">{{ error }}</p>{% endif %}
-  {% if gateway_configured %}
-  <p><a href="/login/gateway" class="btn-google" data-testid="gateway-login">Sign in with Gudmundr</a></p>
-  {% endif %}
-  {% if oauth_configured %}
-  <a href="/auth/google/login" class="btn-google">
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
-    Sign in with Google
-  </a>
-  {% else %}
-  <p class="note">Google OAuth is not configured.<br>Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>
-  {% endif %}
-  <p class="note">Access is restricted to authorized users.</p>
+{% extends "_shell.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="cc-login">
+  <div class="cc-card cc-login__card">
+    <h1 class="cc-h1">Meals</h1>
+    <p class="cc-sub">Calorie &amp; blood-sugar tracker · track what you eat, know what you need.</p>
+    {% if error %}<p class="cc-error" role="alert">{{ error }}</p>{% endif %}
+    {% if gateway_configured %}
+    <a class="cc-btn cc-btn--primary cc-btn--block" href="/login/gateway" data-testid="gateway-login">Sign in with Gudmundr</a>
+    <p class="cc-faint cc-small">One sign-in for every Gudmundr app. Your meal history carries over.</p>
+    {% endif %}
+    {% if pin_enabled or oauth_configured %}
+    <details class="cc-fallback">
+      <summary>Other ways to sign in</summary>
+      {% if pin_enabled %}
+      <form method="post" action="/auth/pin" class="cc-stack" autocomplete="on">
+        <label class="cc-field"><span class="cc-label">Email</span><input type="email" name="email" autocomplete="username" required></label>
+        <label class="cc-field"><span class="cc-label">PIN</span><input type="password" name="pin" autocomplete="current-password" inputmode="numeric" required></label>
+        <button type="submit" class="cc-btn">Sign in with PIN</button>
+      </form>
+      {% endif %}
+      {% if oauth_configured %}
+      <a class="cc-btn cc-btn--block" href="/auth/google/login">Sign in with Google (legacy)</a>
+      {% endif %}
+    </details>
+    {% endif %}
+  </div>
 </div>
-</body>
-</html>
+{% endblock %}
