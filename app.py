@@ -1,7 +1,9 @@
 """Calorie & Blood Sugar Tracker (Meals) — text, voice, photo input.
 
 Renders inside the Gudmundr DDUUI shell + chrome and signs in through
-Gudmundr Gateway. LLM calls route through the Gateway proxy (llm.py)."""
+Gudmundr Gateway. AI goes through llm_client.py: in-app IBM Granite first,
+then the Gateway LLM proxy (F2026-11-23-GATEWAY-KEYPLANE). Voice
+transcription is the one residual direct call (voice_xai.py)."""
 
 import os
 import io
@@ -19,8 +21,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.concurrency import run_in_threadpool
 from jinja2 import Environment, FileSystemLoader
-import llm
+import granite_inproc
+import llm_client
+import voice_xai
 import uvicorn
 
 from auth import oauth, setup_oauth, is_oauth_configured, BASE_URL
@@ -86,7 +91,7 @@ _jinja = Environment(loader=FileSystemLoader(str(APP_DIR / "templates")), autoes
 _PUBLIC_PATHS = {"/login", "/logout", "/health", "/healthz", "/favicon.ico", "/login/gateway"}
 _PUBLIC_PREFIXES = ("/auth/", "/static/")
 # Service endpoints authenticate with the FA_SYNC_TOKEN bearer in the handler.
-_BEARER_PREFIXES = ("/api/admin/",)
+_BEARER_PREFIXES = ("/api/admin/", "/api/ai/")
 
 CC_FALLBACK_PIN = os.environ.get("CC_FALLBACK_PIN", "").strip()
 
@@ -306,7 +311,7 @@ def init_db():
 init_db()
 
 
-# ── LLM (Gateway-routed · see llm.py) ─────────────────────────────────
+# ── AI (llm_client: in-app Granite → Gateway → "AI not available") ─────
 
 CALORIE_SYSTEM = """You are a certified sports nutritionist with expertise in food portion estimation.
 Analyze the food described and provide a detailed calorie breakdown.
@@ -366,45 +371,83 @@ def _parse_response(text: str) -> dict:
         raise
 
 
+AI_UNAVAILABLE = "AI is not available right now. Please try again in a minute."
+
+
 def _error_result(msg: str) -> dict:
     return {"items": [], "total_calories": 0, "total_protein_g": 0,
             "total_carbs_g": 0, "total_fat_g": 0, "total_fiber_g": 0,
-            "confidence": "low", "meal_type": _guess_meal(), "notes": msg}
+            "confidence": "low", "meal_type": _guess_meal(), "notes": msg,
+            "error": True}
+
+
+def _valid_estimate(text: str) -> dict:
+    """A usable estimate is a JSON object with a numeric total. Anything else
+    (prose, broken JSON from a small model) moves the call to the next tier."""
+    d = _parse_response(text)
+    if not isinstance(d, dict) or not isinstance(d.get("total_calories"), (int, float)):
+        raise ValueError("no numeric total_calories")
+    if not isinstance(d.get("items", []), list):
+        raise ValueError("items is not a list")
+    return d
+
+
+def _estimate(messages: list[dict], *, vision: bool = False) -> dict:
+    try:
+        r = llm_client.chat_meta(messages, model_hint="default",
+                                 max_tokens=2048 if vision else 1024, temperature=0.2,
+                                 vision=vision, validate=_valid_estimate)
+    except llm_client.AINotAvailable:
+        return _error_result(AI_UNAVAILABLE)
+    except Exception as e:  # noqa: BLE001
+        return _error_result(f"Estimation error: {type(e).__name__}")
+    result = r["parsed"]
+    result["ai"] = {"tier": r["tier"], "model": r["served_model"] or r["model"],
+                    "latency_ms": r["latency_ms"]}
+    return result
 
 
 def estimate_text(description: str) -> dict:
-    try:
-        text, _route = llm.chat([
-            {"role": "system", "content": CALORIE_SYSTEM},
-            {"role": "user", "content": f"{_time_context()}\n\nFood: {description}"},
-        ], max_tokens=2048)
-        return _parse_response(text)
-    except Exception as e:
-        return _error_result(f"Estimation error: {type(e).__name__}")
+    return _estimate([
+        {"role": "system", "content": CALORIE_SYSTEM},
+        {"role": "user", "content": f"{_time_context()}\n\nFood: {description}"},
+    ])
 
 
 def estimate_photo(image_data: bytes, media_type: str) -> dict:
-    try:
-        b64 = base64.standard_b64encode(image_data).decode()
-        image_url = f"data:{media_type};base64,{b64}"
-        text, _route = llm.chat([
-            {"role": "system", "content": CALORIE_SYSTEM},
-            {"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": image_url}},
-                {"type": "text", "text": f"{_time_context()}\n\nIdentify all food items in this photo. Estimate portion sizes visually and calculate calories with macronutrient breakdown."},
-            ]},
-        ], vision=True, max_tokens=2048)
-        return _parse_response(text)
-    except Exception as e:
-        return _error_result(f"Photo analysis error: {type(e).__name__}")
+    """Vision: in-app Granite has no image input, so llm_client skips tier 1
+    and sends this to the Gateway with GATEWAY_VISION_MODEL."""
+    b64 = base64.standard_b64encode(image_data).decode()
+    image_url = f"data:{media_type};base64,{b64}"
+    return _estimate([
+        {"role": "system", "content": CALORIE_SYSTEM},
+        {"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": image_url}},
+            {"type": "text", "text": f"{_time_context()}\n\nIdentify all food items in this photo. Estimate portion sizes visually and calculate calories with macronutrient breakdown."},
+        ]},
+    ], vision=True)
 
 
 def transcribe_audio(audio_data: bytes, filename: str = "audio.webm") -> str:
+    """Residual direct xAI call (no Gateway audio endpoint yet · voice_xai.py)."""
     try:
-        return llm.transcribe(audio_data, filename)
+        return voice_xai.transcribe(audio_data, filename)
     except Exception as e:
-        print(f"[llm] transcription error: {type(e).__name__}")
+        print(f"[voice] transcription error: {type(e).__name__}")
         return ""
+
+
+def ai_status() -> dict:
+    st = llm_client.status()
+    st["transcription"] = "xai-direct (residual)" if voice_xai.configured() else "unavailable"
+    return st
+
+
+def _ai_summary() -> dict:
+    """Small non-secret summary for the page (no paths, no error text)."""
+    st = llm_client.status()
+    return {"route": st["route"], "granite": st["granite"]["status"],
+            "gateway": st["gateway"]["configured"]}
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -585,6 +628,9 @@ def _row_to_dict(row):
 async def startup():
     setup_oauth()
     _start_outbound_flusher()
+    # Tier 1 AI floor: download (first boot) + load Granite in the background.
+    # Never blocks startup or /healthz; until it is ready llm_client skips it.
+    granite_inproc.start_preload()
 
 
 def _start_outbound_flusher(interval_seconds: int = 30) -> None:
@@ -613,7 +659,7 @@ def _render(request: Request, name: str, **ctx) -> HTMLResponse:
     return HTMLResponse(tpl.render(
         user=user,
         gateway_url=gateway_auth.GATEWAY_URL or "https://gateway.gudmundr.com",
-        ai=llm.status(),
+        ai=_ai_summary(),
         **ctx,
     ))
 
@@ -819,7 +865,31 @@ async def healthz():
 @app.get("/api/me")
 async def api_me(request: Request):
     user = _require_auth(request)
-    return {"email": user["email"], "name": user["name"], "idp": user["idp"], "ai": llm.status()}
+    return {"email": user["email"], "name": user["name"], "idp": user["idp"], "ai": _ai_summary()}
+
+
+@app.get("/api/ai/status")
+async def api_ai_status(request: Request):
+    """Granite + Gateway tier status. Admin or service (bearer) only."""
+    _require_admin(request)
+    return ai_status()
+
+
+@app.post("/api/ai/probe")
+def api_ai_probe(request: Request):
+    """One real AI round trip through the chain (no meal is saved). Shows
+    which tier answered. Admin or service (bearer) only."""
+    _require_admin(request)
+    try:
+        r = llm_client.chat_meta(
+            [{"role": "user", "content": "Reply with one word: the colour of a ripe banana."}],
+            model_hint="fast", max_tokens=8, temperature=0.0)
+    except llm_client.AINotAvailable as e:
+        return JSONResponse({"ok": False, "detail": AI_UNAVAILABLE, "attempts": e.attempts}, 503)
+    return {"ok": True, "tier": r["tier"], "model": r["model"],
+            "served_provider": r["served_provider"], "served_model": r["served_model"],
+            "latency_ms": r["latency_ms"], "fallback_from": r["fallback_from"],
+            "attempts": r["attempts"], "answer": r["content"][:80]}
 
 
 @app.get("/api/ecosystem/my-apps")
@@ -892,7 +962,10 @@ async def api_estimate(request: Request):
     itype = body.get("input_type", "text")
     if not desc:
         raise HTTPException(400, "No food description provided")
-    result = estimate_text(desc)
+    result = await run_in_threadpool(estimate_text, desc)
+    if result.get("error"):
+        # Graceful "AI not available": nothing is logged as a 0-calorie meal.
+        raise HTTPException(503, result.get("notes") or AI_UNAVAILABLE)
     return _save_entry(user["email"], itype, desc, result)
 
 
@@ -900,7 +973,7 @@ async def api_estimate(request: Request):
 async def api_transcribe(request: Request, audio: UploadFile = File(...)):
     _require_auth(request)
     data = await audio.read()
-    text = transcribe_audio(data, audio.filename or "audio.webm")
+    text = await run_in_threadpool(transcribe_audio, data, audio.filename or "audio.webm")
     if not text:
         raise HTTPException(500, "Transcription failed or is not configured")
     return {"text": text}
@@ -915,11 +988,12 @@ async def api_estimate_photo(request: Request, file: UploadFile = File(...)):
     if len(data) > 20_000_000:
         raise HTTPException(400, "Image too large (max 20 MB)")
 
+    result = await run_in_threadpool(estimate_photo, data, file.content_type)
+    if result.get("error"):
+        raise HTTPException(503, result.get("notes") or AI_UNAVAILABLE)
     ext = file.content_type.split("/")[-1].split("+")[0]
     fname = f"{uuid.uuid4().hex[:12]}.{ext}"
     (UPLOAD_DIR / fname).write_bytes(data)
-
-    result = estimate_photo(data, file.content_type)
     return _save_entry(user["email"], "photo", file.filename or "photo", result, fname)
 
 
@@ -1164,7 +1238,7 @@ async def api_export(request: Request, days: int = 30):
     return {
         "metadata": {
             "generated_at": datetime.now().isoformat(),
-            "model": llm.status()["text_model"],
+            "model": "llm_client (in-app Granite, then Gateway auto)",
             "export_days": days,
             "total_entries": len(rows),
             "total_blood_sugar": len(bs),
@@ -1396,7 +1470,7 @@ async def api_admin_journal_stats(request: Request):
 
 
 @app.post("/api/admin/backfill-calories-from-journal")
-async def api_admin_backfill_calories_from_journal(
+def api_admin_backfill_calories_from_journal(
     request: Request, email: str | None = None, limit: int = 25
 ):
     """Estimate calories for each journal entry that hasn't yet been processed
@@ -1421,8 +1495,11 @@ async def api_admin_backfill_calories_from_journal(
 
     # A journal entry needs processing (per email) when its (journal_id, email)
     # pair has no matching `entries` row. Query is at the (journal × email)
-    # grain — one row per pair. To keep Grok calls minimal we still process by
-    # journal_id (call Grok once, insert N rows below).
+    # grain — one row per pair. To keep AI calls minimal we still process by
+    # journal_id (one llm_client call, insert N rows below). This stays a plain
+    # loop of single calls (a sync def, so FastAPI runs it off the event loop);
+    # batch-queue work comes in Phase 3. A failed estimate counts in `errors`
+    # and is retried on the next call (no 0-calorie row is written).
     base_query = """
         SELECT DISTINCT je.id AS journal_id, je.entry_date, je.content, je.member_name
         FROM journal_entries je

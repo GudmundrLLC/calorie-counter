@@ -6,3 +6,4 @@ uploads/
 .venv/
 uv.lock
 .DS_Store
+.cache/

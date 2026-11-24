@@ -59,7 +59,9 @@
       '<ul class="cc-result__items">' + items + "</ul>" +
       '<p class="cc-macros">Protein <b>' + Math.round(data.total_protein_g || 0) + "g</b> · Carbs <b>" + Math.round(data.total_carbs_g || 0) +
       "g</b> · Fat <b>" + Math.round(data.total_fat_g || 0) + "g</b> · Fiber <b>" + Math.round(data.total_fiber_g || 0) + "g</b></p>" +
-      (data.notes ? '<p class="cc-faint cc-small">' + esc(data.notes) + "</p>" : "") + "</div>";
+      (data.notes ? '<p class="cc-faint cc-small">' + esc(data.notes) + "</p>" : "") +
+      (data.ai && data.ai.tier ? '<p class="cc-faint cc-small">Estimated by ' + (data.ai.tier === "granite-inproc" ? "IBM Granite in Meals" : "Gudmundr Gateway") +
+        (data.ai.model ? " · " + esc(data.ai.model) : "") + "</p>" : "") + "</div>";
     clearTimeout(resultTimer);
     resultTimer = setTimeout(function () { area.innerHTML = ""; }, 10000);
   }

@@ -13,7 +13,7 @@
   --cc-ok: color-mix(in srgb, var(--preset-success) var(--preset-ratio-12), var(--preset-surface-card));
   --cc-warn: color-mix(in srgb, var(--preset-warning) var(--preset-ratio-16), var(--preset-surface-card));
   --cc-bad: color-mix(in srgb, var(--preset-danger) var(--preset-ratio-12), var(--preset-surface-card));
-  --cc-link: var(--preset-text);
+  --cc-link: var(--preset-link);
 }
 
 /* high contrast (viewer a11y preference · tokens only) */
@@ -36,7 +36,7 @@ code { font-family: var(--preset-font-mono); font-size: var(--preset-font-size-s
 .cc-sr { position: absolute; width: var(--preset-space-px); height: var(--preset-space-px); overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .cc-faint { color: var(--preset-text-muted); }
 .cc-small { font-size: var(--preset-font-size-small); }
-.cc-error { color: var(--preset-danger); font-weight: var(--preset-font-weight-semibold); margin: var(--preset-space-0); }
+.cc-error { color: var(--preset-danger-text); font-weight: var(--preset-font-weight-semibold); margin: var(--preset-space-0); }
 .cc-empty { color: var(--preset-text-muted); font-style: italic; padding: var(--preset-space-4) var(--preset-space-0); margin: var(--preset-space-0); }
 
 /* page zone · left-anchored (F2026-11-22-LEFTRAIL-PIN rule 3) */
@@ -87,9 +87,9 @@ code { font-family: var(--preset-font-mono); font-size: var(--preset-font-size-s
 .cc-btn--block { width: 100%; }
 .cc-btn--link { background: transparent; border-color: transparent; padding: var(--preset-space-0) var(--preset-space-2); text-decoration: underline; }
 .cc-btn--icon { background: transparent; border-color: transparent; width: var(--preset-size-hit); min-width: var(--preset-size-hit); flex: none; padding: var(--preset-space-0); color: var(--preset-text-muted); }
-.cc-btn--icon:hover { color: var(--preset-danger); }
+.cc-btn--icon:hover { color: var(--preset-danger-text); }
 .cc-btn[aria-pressed="true"] { background: var(--cc-tint-strong); border-color: var(--preset-primary); }
-.cc-btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, .cc-upload:focus-within, .cc-pin:focus-visible {
+.cc-btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, .cc-upload:focus-within {
   outline: var(--preset-focus-ring-width) solid var(--preset-focus-ring); outline-offset: var(--preset-focus-ring-offset);
 }
 input, select, textarea {
@@ -130,7 +130,7 @@ textarea { width: 100%; resize: vertical; line-height: var(--preset-font-line-he
 
 /* voice + photo */
 .cc-record .cc-dot { width: var(--preset-space-2); height: var(--preset-space-2); border-radius: var(--preset-radius-round); background: currentColor; }
-.cc-record.is-recording { color: var(--preset-danger); border-color: var(--preset-danger); }
+.cc-record.is-recording { color: var(--preset-danger-text); border-color: var(--preset-danger); }
 .cc-transcript { min-height: var(--preset-font-size-body); font-style: italic; color: var(--preset-text-muted); }
 .cc-upload {
   display: flex; align-items: center; justify-content: center; text-align: center; cursor: pointer;
@@ -177,8 +177,6 @@ textarea { width: 100%; resize: vertical; line-height: var(--preset-font-line-he
 }
 .cc-item--stack { flex-direction: column; align-items: flex-start; gap: var(--preset-space-1); }
 .cc-item--stack > a { display: inline-flex; align-items: center; min-height: var(--preset-size-hit); min-width: var(--preset-size-hit); }
-/* kit brand link is 23px tall on phones; host lifts it to the hit size (kit request filed) */
-.cs-topbar__brand { min-height: var(--preset-size-hit); }
 .cc-item p { margin: var(--preset-space-0); }
 .cc-item__meta { display: flex; align-items: center; gap: var(--preset-space-2); color: var(--preset-text-muted); font-size: var(--preset-font-size-small); }
 .cc-entry { align-items: flex-start; }
@@ -238,46 +236,6 @@ textarea { width: 100%; resize: vertical; line-height: var(--preset-font-line-he
 .cc-dialog { border: var(--preset-border-width-hairline) solid var(--preset-border); border-radius: var(--preset-radius-popup); background: var(--preset-surface-raised); color: var(--preset-text); padding: var(--preset-space-4-5); box-shadow: var(--preset-shadow-popup); max-width: var(--preset-size-dialog); width: calc(100% - var(--preset-space-6)); }
 .cc-dialog::backdrop { background: var(--preset-scrim); }
 .cc-toast { position: fixed; bottom: calc(var(--preset-size-bottombar) + var(--preset-size-subbar) + var(--preset-space-3)); left: var(--preset-ratio-50); transform: translateX(calc(-1 * var(--preset-ratio-50))); background: var(--preset-surface-tooltip); color: var(--preset-text); border: var(--preset-border-width-hairline) solid var(--preset-border); border-radius: var(--preset-radius-popup); padding: var(--preset-space-2) var(--preset-space-4); z-index: var(--preset-z-toast); box-shadow: var(--preset-shadow-popup); }
-
-/* Active page item: the kit draws --preset-chrome-rail-active text on a
- * rail-active tint, which measures 3.6:1 in Lumen dark (axe). Host override
- * until the kit fixes it (Gateway-kit request): text colour = --preset-text,
- * selection still shown by the tint plus an inset bar. */
-.cs-rail-left [data-dduui-menu] > [aria-current="page"],
-.cs-rail-left [data-dduui-menu] > [aria-selected="true"] {
-  color: var(--preset-text);
-  box-shadow: inset var(--preset-border-width-thick) var(--preset-space-0) var(--preset-space-0) var(--preset-chrome-rail-active);
-}
-
-/* rail pins (app-side shim over the kit grid · see shell.js) */
-.cc-pin {
-  all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: var(--preset-space-3);
-  min-height: var(--preset-size-hit); padding: var(--preset-space-0) var(--preset-space-3); border-radius: var(--preset-radius-button);
-  color: var(--preset-chrome-rail-text); font-size: var(--preset-font-size-small); margin-top: auto;
-}
-.cc-pin:hover { background: color-mix(in srgb, var(--preset-primary) var(--preset-ratio-8), transparent); }
-.cc-pin[aria-pressed="true"] { color: var(--preset-text); }
-.cc-pin--right { margin-top: var(--preset-space-0); padding: var(--preset-space-0); justify-content: center; }
-.cc-pin-restore { display: none; }
-html.cc-left-pinned:not([data-viewport="phone"]):not(.dd-signed-out) .dd-app {
-  grid-template-columns: var(--preset-size-rail-left) minmax(var(--preset-space-0), 1fr) var(--preset-size-rail-icon);
-}
-html.cc-left-unpinned:not([data-viewport="phone"]):not(.dd-signed-out) .dd-app {
-  grid-template-columns: var(--preset-size-rail-icon) minmax(var(--preset-space-0), 1fr) var(--preset-size-rail-icon);
-}
-html.cc-left-pinned:not([data-viewport="phone"]) .cs-rail-left .dd-menu-label { position: static; width: auto; height: auto; overflow: hidden; clip: auto; }
-html.cc-left-pinned:not([data-viewport="phone"]) .cs-rail-left [data-dduui-menu] > * { justify-content: flex-start; padding: var(--preset-space-0) var(--preset-space-3); }
-html.cc-left-pinned[data-viewport="tablet"] .cs-rail-left__label { display: block; }
-html.cc-left-unpinned:not([data-viewport="phone"]) .cs-rail-left .dd-menu-label { position: absolute; width: var(--preset-space-px); height: var(--preset-space-px); overflow: hidden; clip: rect(0 0 0 0); }
-html.cc-left-unpinned:not([data-viewport="phone"]) .cs-rail-left [data-dduui-menu] > *, html.cc-left-unpinned .cc-pin--left { justify-content: center; padding: var(--preset-space-0); }
-html.cc-left-unpinned:not([data-viewport="phone"]) .cs-rail-left__label { display: none; }
-html[data-cc-right="unpinned"]:not([data-viewport="phone"]) .dd-app { grid-template-columns: var(--preset-size-rail-left) minmax(var(--preset-space-0), 1fr) var(--preset-space-0); }
-html[data-cc-right="unpinned"].cc-left-unpinned:not([data-viewport="phone"]) .dd-app { grid-template-columns: var(--preset-size-rail-icon) minmax(var(--preset-space-0), 1fr) var(--preset-space-0); }
-html[data-cc-right="unpinned"].dd-signed-out:not([data-viewport="phone"]) .dd-app { grid-template-columns: var(--preset-space-0) minmax(var(--preset-space-0), 1fr) var(--preset-space-0); }
-html[data-cc-right="unpinned"]:not([data-viewport="phone"]) .cs-rail-right { display: none; }
-html[data-cc-right="unpinned"]:not([data-viewport="phone"]) .cc-pin-restore { display: inline-flex; }
-html[data-cc-right="unpinned"]:not([data-viewport="phone"]) .cs-topbar [data-dd-open="eco"] { display: inline-flex; }
-html[data-viewport="phone"] .cc-pin { display: none; }
 
 /* tablet + phone (SURFACEPOLY-5a: priority stacking, no horizontal overflow) */
 html[data-viewport="tablet"] .cc-page { padding: var(--preset-space-4) var(--preset-space-5) var(--preset-space-6); }
