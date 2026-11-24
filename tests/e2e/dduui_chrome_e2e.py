@@ -169,7 +169,7 @@ def run_browser(pw, kind: str) -> None:
         page.wait_for_url("**/login*", timeout=20000)
         check(f"{label} sign-out returns to /login", "/login" in page.url)
     else:
-        page.wait_for_url("**accounts.google.com/**", timeout=30000)
+        page.wait_for_url(lambda u: "accounts.google.com" in u, timeout=30000, wait_until="commit")
         check(f"{label} SSO hands off to Gateway → Google", "accounts.google.com" in page.url)
         page.goto(BASE + "/login", wait_until="networkidle")
 
