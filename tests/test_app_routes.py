@@ -44,10 +44,12 @@ def test_unauthenticated_post_is_401(path):
 
 
 @pytest.mark.parametrize("path", ["/", "/journal", "/report", "/search", "/help"])
-def test_unauthenticated_pages_redirect_to_login(path):
+def test_unauthenticated_pages_show_sign_in_in_place(path):
     r = client.get(path, follow_redirects=False)
-    assert r.status_code in (302, 303, 307)
-    assert r.headers["location"].endswith("/login")
+    assert r.status_code == 200
+    assert 'href="/login/gateway"' in r.text
+    assert "data-dduui-menu" not in r.text  # no page menu, no user data
+    assert r.headers["cache-control"] == "no-store"
 
 
 def test_login_page_loads_kit_102():

@@ -65,7 +65,13 @@ async def _auth_gate(request: Request, call_next):
         if not _current_user(request):
             if path.startswith("/api/") or request.headers.get("accept", "").startswith("application/json"):
                 return JSONResponse({"detail": "Not authenticated"}, status_code=401)
-            return RedirectResponse("/login", status_code=303)
+            # Signed-out page hit: show the sign-in page in place (no data is
+            # rendered). No redirect hop, so every browser engine and the
+            # shared conformance suite see one clean document.
+            resp = await login_page(request)
+            resp.headers["Cache-Control"] = "no-store"
+            resp.headers["X-Robots-Tag"] = "noindex"
+            return resp
     resp = await call_next(request)
     if path.startswith("/auth/") or path == "/login":
         resp.headers["Cache-Control"] = "no-store"
